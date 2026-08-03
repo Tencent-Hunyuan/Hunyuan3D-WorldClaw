@@ -1,8 +1,9 @@
 import { ArrowLeft, ArrowRight, ArrowsOut, X } from "@phosphor-icons/react";
-import { motion, useReducedMotion } from "motion/react";
+import { motion, useInView, useReducedMotion } from "motion/react";
 import { type RefObject, useEffect, useRef, useState } from "react";
 import {
   type Channel,
+  channelPoster,
   channels,
   channelStill,
   channelVideo,
@@ -13,6 +14,7 @@ import { CropFrame } from "./CropFrame";
 interface RenderPanelProps {
   scene: Scene;
   channel: Channel;
+  /** Section-level play state; the panel still has to be on screen itself. */
   playing: boolean;
   eager?: boolean;
   onExpand: () => void;
@@ -34,23 +36,34 @@ function videoUrl(scene: Scene, channel: Channel) {
   return path ? `${import.meta.env.BASE_URL}${path}` : null;
 }
 
-/** Keeps a video element in sync with the section's play state. */
+function posterUrl(scene: Scene, channel: Channel) {
+  const path = channelPoster(scene, channel.id);
+  return path ? `${import.meta.env.BASE_URL}${path}` : null;
+}
+
+/**
+ * Keeps a video element in sync with the section's play state.
+ *
+ * Deliberately not gated on a "loaded" flag: the elements use
+ * `preload="none"`, so play() is what starts the download in the first place.
+ * Waiting for loadeddata before calling play() would never resolve.
+ */
 function useSyncedPlayback(
   ref: RefObject<HTMLVideoElement | null>,
   playing: boolean,
-  ready: boolean,
+  mounted: boolean,
 ) {
   useEffect(() => {
     const video = ref.current;
-    if (!video || !ready) return;
+    if (!video) return;
     if (playing) {
       void video.play().catch(() => {
-        /* autoplay can be refused; the still frame stays visible */
+        /* autoplay can be refused; the poster frame stays visible */
       });
     } else {
       video.pause();
     }
-  }, [ref, playing, ready]);
+  }, [ref, playing, mounted]);
 }
 
 /** Callers must key this on scene and channel so playback state resets. */
@@ -58,40 +71,67 @@ function ChannelMedia({
   scene,
   channel,
   playing,
+  load = true,
   eager,
   controls = false,
 }: {
   scene: Scene;
   channel: Channel;
   playing: boolean;
+  load?: boolean;
   eager?: boolean;
   controls?: boolean;
 }) {
   const [ready, setReady] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const src = videoUrl(scene, channel);
+  const poster = posterUrl(scene, channel);
 
-  useSyncedPlayback(videoRef, playing, ready);
+  useSyncedPlayback(videoRef, playing, load);
 
   return (
     <>
-      <CropFrame
-        src={figureUrl(scene)}
-        alt={`${scene.name}, ${channel.label} channel`}
-        rect={channelStill(channel.figureRow)}
-        eager={eager}
-      />
-      {src && (
+      {/*
+       * Base layer. Scenes that ship clips use the clip's own first frame, so
+       * there is no jump when the video fades in; scenes that do not fall back
+       * to a crop of the paper's case sheet.
+       */}
+      {poster ? (
+        <img
+          className="channel-poster"
+          src={poster}
+          alt={`${scene.name}, ${channel.label} channel`}
+          width={640}
+          height={360}
+          loading={eager ? "eager" : "lazy"}
+          decoding="async"
+        />
+      ) : (
+        <CropFrame
+          src={figureUrl(scene)}
+          alt={`${scene.name}, ${channel.label} channel`}
+          rect={channelStill(channel.figureRow)}
+          eager={eager}
+        />
+      )}
+      {/*
+       * The element is only mounted once `load` is true, so nothing is
+       * requested for a scene the visitor never scrolls to. `preload="none"`
+       * keeps even the mounted element quiet until play() is called.
+       */}
+      {src && load && (
         <video
           key={src}
           ref={videoRef}
           className={`channel-video ${ready ? "is-ready" : ""}`}
           src={src}
+          poster={poster ?? undefined}
           muted
           loop
           playsInline
+          autoPlay={playing}
           controls={controls}
-          preload="metadata"
+          preload="none"
           onLoadedData={() => setReady(true)}
           onError={() => setReady(false)}
           aria-label={`${scene.name}, ${channel.label} channel clip`}
@@ -108,8 +148,18 @@ export function RenderPanel({
   eager,
   onExpand,
 }: RenderPanelProps) {
+  const ref = useRef<HTMLElement>(null);
+  /*
+   * Each tile answers for itself rather than deferring to the grid. On desktop
+   * the four sit in one row and all four qualify together, but on a phone they
+   * stack full-width, so only the tile actually being looked at is fetched and
+   * decoded — the other three cost nothing until scrolled to.
+   */
+  const seen = useInView(ref, { amount: 0.1, once: true });
+  const onScreen = useInView(ref, { amount: 0.1 });
+
   return (
-    <article className={`render-panel channel-${channel.id}`}>
+    <article ref={ref} className={`render-panel channel-${channel.id}`}>
       <button
         className="render-media"
         type="button"
@@ -119,7 +169,8 @@ export function RenderPanel({
         <ChannelMedia
           scene={scene}
           channel={channel}
-          playing={playing}
+          playing={playing && onScreen}
+          load={seen}
           eager={eager}
         />
         <span className="render-media-scrim" aria-hidden="true">

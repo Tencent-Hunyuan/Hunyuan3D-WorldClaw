@@ -98,14 +98,21 @@ export function Gallery() {
     };
   }, [updateRailBounds]);
 
+  /*
+   * Scrolls the rail only. `scrollIntoView` also walks up to the document and
+   * scrolls the page, which pushed the render grid out of view — and with it
+   * the in-view check that keeps the clips playing.
+   */
   const revealSceneChip = (index: number) => {
-    const chip =
-      railRef.current?.querySelectorAll<HTMLButtonElement>(".scene-chip")[index];
-    chip?.scrollIntoView({
-      behavior: "smooth",
-      block: "nearest",
-      inline: "center",
-    });
+    const rail = railRef.current;
+    const chip = rail?.querySelectorAll<HTMLButtonElement>(".scene-chip")[index];
+    if (!rail || !chip) return;
+
+    const railBox = rail.getBoundingClientRect();
+    const chipBox = chip.getBoundingClientRect();
+    const delta =
+      chipBox.left + chipBox.width / 2 - (railBox.left + railBox.width / 2);
+    rail.scrollBy({ left: delta, behavior: "smooth" });
   };
 
   const selectScene = (index: number) => {
@@ -182,7 +189,8 @@ export function Gallery() {
       event.currentTarget.querySelectorAll<HTMLButtonElement>(".scene-chip")[
         next
       ];
-    chip?.focus();
+    // preventScroll: focus() would otherwise scroll the page, same as above.
+    chip?.focus({ preventScroll: true });
     revealSceneChip(next);
   };
 
@@ -195,8 +203,9 @@ export function Gallery() {
           title="Eleven worlds, rendered four ways."
           lede={
             <p>
-              Every world ships as an isometric layout plus four aligned render
-              passes: appearance, instance masks, surface normals, and depth.
+              Every world ships as an isometric layout plus one camera orbit
+              rendered four ways: appearance, instance masks, surface normals,
+              and depth.
             </p>
           }
         />
@@ -306,7 +315,7 @@ export function Gallery() {
                 </div>
                 <div>
                   <dt>Channels</dt>
-                  <dd>{channels.length} aligned</dd>
+                  <dd>{channels.length} synchronized</dd>
                 </div>
               </dl>
             </div>

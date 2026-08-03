@@ -116,7 +116,7 @@ export function NavBar() {
             rel="noreferrer"
           >
             <PaperIcon />
-            <span>arXiv</span>
+            <span>ArXiv</span>
           </a>
           <ThemeToggle />
           <button
@@ -186,7 +186,7 @@ export function NavBar() {
               }}
             >
               <PaperIcon />
-              arXiv
+              ArXiv
             </motion.a>
           </motion.div>
         )}

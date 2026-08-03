@@ -314,6 +314,7 @@ export const scenes: Scene[] = [
     icon: "tree",
     prompt:
       "A medieval-style village scene with diverse terrain, including snow-capped mountains, plains, bodies of water, and a desert, populated with animals.",
+    hasVideos: true,
   },
   {
     id: "snowline-village",
@@ -324,6 +325,7 @@ export const scenes: Scene[] = [
     icon: "snow",
     prompt:
       "A snow-covered village scene set in a frozen landscape, with the village distributed along both sides of a river.",
+    hasVideos: true,
   },
   {
     id: "painted-dunes",
@@ -334,6 +336,7 @@ export const scenes: Scene[] = [
     icon: "wind",
     prompt:
       "A desert adventure camp surrounded by several massive dragons coiling around the landscape.",
+    hasVideos: true,
   },
   {
     id: "island-settlement",
@@ -344,6 +347,7 @@ export const scenes: Scene[] = [
     icon: "waves",
     prompt:
       "A tropical island that serves as a pirate stronghold, inspired by the adventurous atmosphere of One Piece.",
+    hasVideos: true,
   },
   {
     id: "grand-canyon",
@@ -354,6 +358,7 @@ export const scenes: Scene[] = [
     icon: "canyon",
     prompt:
       "A canyon scene with a river flowing through the entire canyon. Primitive tribal villages are scattered along the surrounding cliffs and valley floor.",
+    hasVideos: true,
   },
   {
     id: "azure-archipelago",
@@ -364,6 +369,7 @@ export const scenes: Scene[] = [
     icon: "waves",
     prompt:
       "An island scene with multiple Japanese-style towns scattered across the island, surrounded by the ocean",
+    hasVideos: true,
   },
   {
     id: "ember-caldera",
@@ -374,6 +380,7 @@ export const scenes: Scene[] = [
     icon: "fire",
     prompt:
       "A volcanic landscape filled with glowing lava, where the entire volcano resembles the lair of a powerful demon.",
+    hasVideos: true,
   },
   {
     id: "desert-frontier",
@@ -384,6 +391,7 @@ export const scenes: Scene[] = [
     icon: "sun",
     prompt:
       "A desert battlefield inspired by PUBG's desert maps, designed as an open environment suitable for large-scale PvP combat.",
+    hasVideos: true,
   },
   {
     id: "frontier-mine",
@@ -394,6 +402,7 @@ export const scenes: Scene[] = [
     icon: "ruins",
     prompt:
       "A mining site filled with rich gemstones deposits, with excavation equipment and construction areas actively extracting the resources.",
+    hasVideos: true,
   },
   {
     id: "verdant-valley",
@@ -404,6 +413,7 @@ export const scenes: Scene[] = [
     icon: "flower",
     prompt:
       "A realistic mountain valley with scattered Hobbit-style villages nestled beneath the surrounding hills.",
+    hasVideos: true,
   },
   {
     id: "snowbound-outpost",
@@ -414,6 +424,7 @@ export const scenes: Scene[] = [
     icon: "snow",
     prompt:
       "A realistic snow-covered mountain valley inspired by the style of Command & Conquer: Red Alert, featuring a variety of futuristic high-tech buildings scattered throughout the landscape.",
+    hasVideos: true,
   },
 ];
 
@@ -447,6 +458,14 @@ export function channelVideo(scene: Scene, channel: ChannelId) {
     scene.videos?.[channel] ??
     (scene.hasVideos ? `media/scenes/${scene.id}/${channel}.mp4` : null)
   );
+}
+
+/**
+ * Poster frame sitting next to each clip: the clip's own first frame, so the
+ * tile shows the right image for ~25 KB before a single byte of video moves.
+ */
+export function channelPoster(scene: Scene, channel: ChannelId) {
+  return scene.hasVideos ? `media/scenes/${scene.id}/${channel}.webp` : null;
 }
 
 /** Layout renders follow the same convention: `assets/layouts/<scene-id>.webp`. */

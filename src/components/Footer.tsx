@@ -31,7 +31,7 @@ export function Footer() {
         <nav className="footer-nav" aria-label="Resources">
           <span>Resources</span>
           <a href={paperUrl} target="_blank" rel="noreferrer">
-            arXiv
+            ArXiv
           </a>
           <a href="#citation">BibTeX</a>
         </nav>

@@ -70,7 +70,7 @@ export function Citation() {
                 rel="noreferrer"
               >
                 <PaperIcon />
-                arXiv
+                ArXiv
                 <span className="button-affordance" aria-hidden="true">
                   <ArrowUpRight weight="bold" />
                 </span>

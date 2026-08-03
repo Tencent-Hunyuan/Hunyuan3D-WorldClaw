@@ -1,127 +1,94 @@
-# WorldClaw Project Page
+# WorldClaw
 
-Project page for **WorldClaw: Agentic Open-World 3D Scene Generation at Scale**.
-
-Built with Vite, React and TypeScript. No backend — the whole site is static
-files served from `dist/`.
-
-## Local development
+Project page for *WorldClaw: Agentic Open-World 3D Scene Generation at Scale*.
+React + TypeScript, built with Vite, deployed to GitHub Pages.
 
 ```bash
 npm install
-npm run dev
+npm run dev      # http://localhost:5173
+npm run build    # -> dist/
+npm run preview
+npm run lint
 ```
 
-Production checks:
+## Content
 
-```bash
-npm run lint     # eslint
-npm run build    # tsc -b && vite build  (type errors fail the build)
-npm run preview  # serve dist/ locally
-```
+Almost everything on the page is data rather than markup. `src/data/content.ts`
+holds the abstract, the method stages and their formulas, the eleven result
+scenes, the contributor list, and the BibTeX entry. Adding a scene or reordering
+the method is an edit to that file.
+
+Two link targets are worth knowing about:
+
+- `paperUrl` in `src/data/content.ts` is the single source for every "arXiv"
+  link on the page. It currently points at the bundled PDF; change it once and
+  the nav, hero, citation block, and footer all follow.
+- The Open Graph and Twitter tags in `index.html` need absolute URLs, because
+  social scrapers do not resolve relative ones reliably. They are the only place
+  the deployed origin is hardcoded — update all four together if the page moves.
+
+## Assets
+
+| Path | What |
+| --- | --- |
+| `public/assets/worldclaw-<season>.webp` | Hero season renders |
+| `public/assets/layouts/<scene-id>.webp` | Isometric layout per result scene |
+| `public/assets/cases/case*.jpg` | Paper case sheets (fallback stills) |
+| `public/assets/paper/*.jpg` | Figures in the method section |
+| `public/media/scenes/<scene-id>/` | Result clips and posters |
+| `public/favicon.svg` | Brand mark, shared with `src/components/BrandMark.tsx` |
+
+Result clips have their own conventions and encoding recipe — see
+[`public/media/README.md`](public/media/README.md) and
+`scripts/encode-clips.sh`.
 
 ## Deploying to GitHub Pages
 
-`.github/workflows/deploy-pages.yml` builds and publishes `dist/` on every push
-to `main`, and can also be run manually from the Actions tab. It uses the
-official Pages actions, so there is no `gh-pages` branch and no deploy key.
+`.github/workflows/deploy-pages.yml` builds on every push to `main` and
+publishes `dist/`. In the repository settings, set **Pages → Source** to
+**GitHub Actions**.
 
-One-time repository setup:
+`vite.config.ts` uses `base: "./"`, so the build works from any path — a
+`user.github.io/repo/` project site, a user site, or a custom domain — with no
+configuration change.
 
-1. Open **Settings → Pages**.
-2. Set **Build and deployment → Source** to **GitHub Actions**.
-3. Push to `main`. The deployed URL appears on the workflow run under the
-   `github-pages` environment.
+### Payload
 
-The workflow runs `npm ci`, so **`package-lock.json` must be committed and in
-sync with `package.json`** or the build fails before it reaches Vite.
+The deploy is around 82 MB, of which 63 MB is video. That is well inside the
+1 GB GitHub Pages limit, and no visitor downloads anything close to it:
 
-### Base path
+Measured against the production build at 1440x900:
 
-`vite.config.ts` sets `base: "./"`, so every asset is referenced relatively and
-the build works unchanged at a repository subpath
-(`https://<user>.github.io/WorldClaw/`), at a domain root, or from the local
-filesystem. Nothing needs to change if the repository is renamed.
-
-In app code, always build public-asset URLs from `import.meta.env.BASE_URL`
-rather than a leading `/`:
-
-```ts
-src={`${import.meta.env.BASE_URL}assets/paper/pipeline.jpg`}
-```
-
-An absolute path like `/assets/…` resolves to the domain root and 404s once the
-site lives under `/WorldClaw/`.
-
-### The one hardcoded URL
-
-Open Graph and Twitter cards require **absolute** image URLs — scrapers do not
-resolve relative ones reliably — so the deployed origin is hardcoded in
-`index.html`. Four tags carry it and must be updated together if the page moves
-to a different repository, organisation or custom domain:
-
-- `og:url`
-- `og:image`
-- `twitter:image`
-
-They currently point at `https://longhz140516.github.io/WorldClaw/`. Everything
-else on the page is relative.
-
-## Linking the paper
-
-Every "arXiv" link on the page — nav, hero, mobile menu, citation and footer —
-reads a single constant in `src/data/content.ts`:
-
-```ts
-export const paperUrl = `${import.meta.env.BASE_URL}WorldClaw.pdf`;
-```
-
-It currently serves the PDF bundled in `public/`. Once the preprint is live,
-replace the whole expression with the arXiv abstract URL:
-
-```ts
-export const paperUrl = "https://arxiv.org/abs/2601.00000";
-```
-
-Drop the `BASE_URL` prefix when doing so — it only applies to files served from
-this site.
-
-## Content and media
-
-Copy, scene metadata, method stages and the BibTeX entry all live in
-`src/data/content.ts`.
-
-| Path | Contents |
+| | Transferred |
 | --- | --- |
-| `public/WorldClaw.pdf` | Bundled paper, target of `paperUrl` until arXiv is live |
-| `public/favicon.svg` | Brand mark, same geometry as `src/components/BrandMark.tsx` |
-| `public/assets/apple-touch-icon.png` | 180×180 home-screen icon |
-| `public/assets/worldclaw-share.jpg` | 1200×630 social card |
-| `public/assets/worldclaw-{spring,summer,autumn,winter}.webp` | Hero season renders, transparent, 2:1 |
-| `public/assets/layouts/<scene-id>.webp` | 11 isometric layout renders for the Results section |
-| `public/assets/cases/` | 11 case sheets from the paper, cropped for the channel stills |
-| `public/assets/paper/` | Fig. 1 pipeline, Fig. 2 terrain stages, Fig. 3 scene refinement |
-| `public/media/scenes/<scene-id>/` | Optional per-channel clips — see `public/media/README.md` |
+| Landing on the page, never scrolling | 1.4 MB, no video |
+| Scrolling to Results | 6.5 MB — the active scene's four clips are 4 MB of that |
+| Opening a second scene | +5 MB |
+| Reading the whole page, two scenes viewed | 12 MB |
 
-Layout renders are alpha cut-outs normalised onto one 1200×878 canvas
-(`LAYOUT_WIDTH` / `LAYOUT_HEIGHT` in `src/data/content.ts`) so switching scenes
-never reflows the page.
+Video only moves when the render grid is on screen, and only for the scene
+being viewed. See the loading notes in `public/media/README.md`.
 
-Result clips are optional. Until a scene sets `hasVideos: true`, its four
-channel tiles show still frames cropped from the case sheet and the play/pause
-control is hidden. See `public/media/README.md` for the directory convention and
-encoding settings.
+GitHub Pages' bandwidth allowance is a soft 100 GB/month. At roughly 5–10 MB
+for a reader who browses a few scenes, that is on the order of ten thousand
+visits a month before it becomes a question.
 
-### Adding a paper figure
+### Two things worth knowing
 
-Figures render through `src/components/FigurePlate.tsx`, which makes them
-clickable and opens a full-resolution view with a fit / actual-size toggle. Pass
-the image's **true** pixel dimensions — they reserve layout space before the
-image loads, so wrong values cause a visible jump.
+**Think twice before moving the clips to Git LFS.** GitHub's docs state plainly
+that Git LFS cannot be used with Pages sites: a branch-based deploy publishes
+the pointer text files and every video on the page breaks. This workflow
+uploads a build artifact rather than a branch, so LFS *can* work here — but
+only if the checkout step is given `lfs: true`, otherwise the build copies
+pointer files into `dist/`. At 63 MB total and 2.4 MB for the largest clip,
+the files sit well inside ordinary Git limits, so the simplest thing is not to
+use LFS at all.
 
-## Accessibility and themes
+**Headers are not configurable.** GitHub Pages ignores `Cache-Control` and has
+no equivalent of a `_headers` file; it serves everything with its own
+ten-minute cache plus ETags. Repeat visitors still revalidate cheaply, and JS
+and CSS are content-hashed by Vite.
 
-Light and dark themes are driven by `data-theme` on `<html>`, set before first
-paint by an inline script in `index.html` and toggled by
-`src/components/ThemeToggle.tsx`. The preference persists in `localStorage`
-under `worldclaw-theme`. `prefers-reduced-motion` is honoured throughout.
+If traffic ever does become a problem, putting Cloudflare (free tier) in front
+of the Pages domain caches the clips at the edge and removes the bandwidth
+question entirely, without moving the files anywhere.
