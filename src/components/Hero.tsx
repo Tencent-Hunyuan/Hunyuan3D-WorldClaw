@@ -18,7 +18,6 @@ import {
   type KeyboardEvent,
   type PointerEvent,
   useEffect,
-  useRef,
   useState,
 } from "react";
 import { contributors, paperUrl, seasons } from "../data/content";
@@ -52,13 +51,12 @@ export function Hero() {
   const [activeIndex, setActiveIndex] = useState(0);
   const [autoRotate, setAutoRotate] = useState(true);
   const reduceMotion = useReducedMotion();
-  const stageRef = useRef<HTMLDivElement>(null);
   const activeSeason = seasons[activeIndex];
   const baseUrl = import.meta.env.BASE_URL;
   const tiltX = useMotionValue(0);
   const tiltY = useMotionValue(0);
-  const springX = useSpring(tiltX, { stiffness: 110, damping: 22 });
-  const springY = useSpring(tiltY, { stiffness: 110, damping: 22 });
+  const springX = useSpring(tiltX, { stiffness: 170, damping: 26 });
+  const springY = useSpring(tiltY, { stiffness: 170, damping: 26 });
   const imageRotateX = useTransform(springX, (value) => `${value}deg`);
   const imageRotateY = useTransform(springY, (value) => `${value}deg`);
 
@@ -87,8 +85,8 @@ export function Hero() {
     const bounds = event.currentTarget.getBoundingClientRect();
     const x = (event.clientX - bounds.left) / bounds.width - 0.5;
     const y = (event.clientY - bounds.top) / bounds.height - 0.5;
-    tiltX.set(y * -6);
-    tiltY.set(x * 8);
+    tiltX.set(y * -3.5);
+    tiltY.set(x * 4.5);
   };
 
   const resetTilt = () => {
@@ -116,8 +114,9 @@ export function Hero() {
     >
       <div className="hero-wash" aria-hidden="true">
         {seasons.map((season, index) => (
-          <motion.span
+          <span
             key={season.id}
+            className={index === activeIndex ? "is-active" : ""}
             style={
               {
                 "--wash-soft": season.accentSoft,
@@ -125,12 +124,6 @@ export function Hero() {
                 "--wash-canvas": season.canvas,
               } as CSSProperties
             }
-            initial={false}
-            animate={{ opacity: index === activeIndex ? 1 : 0 }}
-            transition={{
-              duration: reduceMotion ? 0.12 : 0.6,
-              ease: [0.4, 0, 0.2, 1],
-            }}
           />
         ))}
       </div>
@@ -214,7 +207,6 @@ export function Hero() {
         >
           <div
             className="scene-stage"
-            ref={stageRef}
             onPointerMove={handlePointerMove}
             onPointerLeave={resetTilt}
           >
@@ -227,15 +219,17 @@ export function Hero() {
               }}
             >
               {/*
-               * All four seasons stay mounted and cross-fade. Swapping the src
-               * instead would stall on decoding a 1024px JPEG mid-transition.
+               * All four decoded renders stay mounted. A compositor-only CSS
+               * dissolve avoids the transform/filter work that made seasonal
+               * switches feel as though they travelled across the stage.
                */}
               {seasons.map((season, index) => {
                 const isActive = index === activeIndex;
 
                 return (
-                  <motion.img
+                  <img
                     key={season.id}
+                    className={`season-image ${isActive ? "is-active" : ""}`}
                     src={`${baseUrl}${season.image}`}
                     alt={
                       isActive
@@ -243,16 +237,10 @@ export function Hero() {
                         : ""
                     }
                     aria-hidden={!isActive}
-                    width="1024"
-                    height="1024"
+                    width="1800"
+                    height="900"
                     decoding="async"
                     fetchPriority={index === 0 ? "high" : "low"}
-                    initial={false}
-                    animate={{ opacity: isActive ? 1 : 0 }}
-                    transition={{
-                      duration: reduceMotion ? 0.12 : 0.45,
-                      ease: [0.4, 0, 0.2, 1],
-                    }}
                   />
                 );
               })}
@@ -264,7 +252,9 @@ export function Hero() {
             role="group"
             aria-label="Preview a seasonal world"
             onKeyDown={handleSeasonKeys}
+            style={{ "--season-index": activeIndex } as CSSProperties}
           >
+            <span className="season-switch-indicator" aria-hidden="true" />
             {seasons.map((season, index) => {
               const SeasonIcon = seasonIcons[season.id];
               const isActive = index === activeIndex;
@@ -277,32 +267,24 @@ export function Hero() {
                   aria-pressed={isActive}
                   tabIndex={isActive ? 0 : -1}
                   key={season.id}
-                  style={
-                    { "--chip-accent": season.accent } as CSSProperties
-                  }
                 >
                   <SeasonIcon weight="duotone" aria-hidden="true" />
                   <span>{season.name}</span>
-                  {isActive && (
-                    <motion.span
-                      className="season-chip-bed"
-                      layoutId="season-chip-bed"
-                      transition={{
-                        type: "spring",
-                        stiffness: 380,
-                        damping: 34,
-                      }}
-                      aria-hidden="true"
-                    />
-                  )}
                 </button>
               );
             })}
           </div>
 
-          <p className="season-line" aria-live="polite">
-            {activeSeason.line}
-          </p>
+          <div
+            className="season-copy"
+            key={activeSeason.id}
+            aria-live="polite"
+          >
+            <p className="season-asset-note">
+              <span>Asset source</span>
+              {activeSeason.assetNote}
+            </p>
+          </div>
         </motion.div>
 
         <div className="hero-rail">

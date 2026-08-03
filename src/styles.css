@@ -685,6 +685,7 @@ p {
 .hero-wash span {
   position: absolute;
   inset: 0;
+  opacity: 0;
   background: radial-gradient(
     ellipse 60% 50% at 82% 16%,
     color-mix(in srgb, var(--wash-soft) 62%, transparent),
@@ -696,7 +697,12 @@ p {
     transparent 70%
   ),
     var(--wash-canvas);
+  transition: opacity 320ms cubic-bezier(.4, 0, .2, 1);
   will-change: opacity;
+}
+
+.hero-wash span.is-active {
+  opacity: 1;
 }
 
 /*
@@ -834,6 +840,7 @@ p {
 /* Height follows the render itself, so no dead space opens under the scene. */
 .scene-stage {
   position: relative;
+  isolation: isolate;
   display: grid;
   width: 100%;
   place-items: center;
@@ -853,24 +860,68 @@ p {
   will-change: transform;
 }
 
+.scene-card::before {
+  position: absolute;
+  z-index: -1;
+  right: 9%;
+  bottom: -3%;
+  left: 9%;
+  height: 24%;
+  border-radius: 50%;
+  background: radial-gradient(
+    ellipse,
+    color-mix(in srgb, var(--season-accent) 18%, rgb(44 37 29 / 22%)),
+    transparent 70%
+  );
+  content: '';
+}
+
 .scene-card img {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
   object-fit: contain;
+  opacity: 0;
+  transition: opacity 260ms cubic-bezier(.4, 0, .2, 1);
+  will-change: opacity;
+}
+
+.scene-card img.is-active {
+  opacity: 1;
 }
 
 .season-switch {
-  display: flex;
-  width: max-content;
+  --switch-pad: .28rem;
+
+  position: relative;
+  display: grid;
+  width: min(100%, 26rem);
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   max-width: 100%;
-  gap: .15rem;
-  padding: .28rem;
+  padding: var(--switch-pad);
   border: 1px solid rgb(26 26 22 / 12%);
   border-radius: 999px;
   background: rgb(255 255 255 / 46%);
   box-shadow: inset 0 1px 0 rgb(255 255 255 / 70%);
+}
+
+.season-switch-indicator {
+  position: absolute;
+  z-index: 0;
+  top: var(--switch-pad);
+  bottom: var(--switch-pad);
+  left: var(--switch-pad);
+  width: calc((100% - var(--switch-pad) * 2) / 4);
+  border-radius: 999px;
+  background: var(--season-accent);
+  box-shadow: 0 4px 14px
+    color-mix(in srgb, var(--season-accent) 34%, transparent);
+  transform: translate3d(calc(var(--season-index) * 100%), 0, 0);
+  transition: transform 360ms cubic-bezier(.22, 1, .36, 1),
+    background-color 220ms linear,
+    box-shadow 220ms linear;
+  will-change: transform;
 }
 
 .season-chip {
@@ -887,11 +938,13 @@ p {
   font-size: .73rem;
   font-weight: 630;
   letter-spacing: -.01em;
-  transition: color var(--dur) var(--ease-out);
+  transition: color 220ms var(--ease-out),
+    background-color 220ms var(--ease-out),
+    box-shadow 220ms var(--ease-out);
 }
 
 .season-chip > svg,
-.season-chip > span:not(.season-chip-bed) {
+.season-chip > span {
   position: relative;
   z-index: 1;
 }
@@ -906,24 +959,54 @@ p {
 }
 
 .season-chip.is-active {
+  background: transparent;
+  box-shadow: none;
   color: #fff;
 }
 
-.season-chip-bed {
-  position: absolute;
-  z-index: 0;
-  inset: 0;
-  border-radius: 999px;
-  background: var(--chip-accent);
-  box-shadow: 0 4px 14px color-mix(in srgb, var(--chip-accent) 34%, transparent);
+.season-copy {
+  width: min(100%, 64ch);
+  min-height: 3.4rem;
 }
 
-.season-line {
-  max-width: 46ch;
-  color: #5b5a52;
-  font-size: .76rem;
-  line-height: 1.55;
+.season-asset-note {
+  position: relative;
+  display: flex;
+  width: 100%;
+  align-items: baseline;
+  justify-content: center;
+  gap: .45rem .7rem;
+  margin: 0;
+  padding-top: .8rem;
+  color: #65645b;
+  font-size: .66rem;
+  line-height: 1.5;
   text-align: center;
+}
+
+.season-asset-note::before {
+  position: absolute;
+  top: 0;
+  left: 50%;
+  width: min(100%, 19rem);
+  height: 1px;
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in srgb, var(--season-accent) 46%, rgb(26 26 22 / 14%)),
+    transparent
+  );
+  content: '';
+  transform: translateX(-50%);
+}
+
+.season-asset-note > span {
+  color: var(--season-accent);
+  font-family: var(--font-mono);
+  font-size: .5rem;
+  font-weight: 650;
+  letter-spacing: .13em;
+  text-transform: uppercase;
 }
 
 .hero-rail {
@@ -1039,7 +1122,7 @@ p {
 
 :root[data-theme='dark'] .hero-kicker,
 :root[data-theme='dark'] .hero-summary,
-:root[data-theme='dark'] .season-line,
+:root[data-theme='dark'] .season-asset-note,
 :root[data-theme='dark'] .hero-credits dt {
   color: var(--muted);
 }
@@ -1083,8 +1166,12 @@ p {
   color: var(--ink);
 }
 
-:root[data-theme='dark'] .scene-card img {
-  filter: drop-shadow(0 34px 52px rgb(0 0 0 / 46%));
+:root[data-theme='dark'] .scene-card::before {
+  background: radial-gradient(
+    ellipse,
+    color-mix(in srgb, var(--season-accent) 14%, rgb(0 0 0 / 54%)),
+    transparent 70%
+  );
 }
 
 /* ============================================================
@@ -2980,7 +3067,18 @@ figcaption {
   }
 
   .season-chip {
-    padding-inline: .7rem;
+    gap: .32rem;
+    padding-inline: .35rem;
+  }
+
+  .season-copy {
+    min-height: 4.8rem;
+  }
+
+  .season-asset-note {
+    flex-direction: column;
+    align-items: center;
+    gap: .25rem;
   }
 
   /* Let the wide render bleed past the shell; .hero clips it at the viewport. */

@@ -61,7 +61,7 @@ export interface Season {
   canvas: string;
   image: string;
   particle: "petal" | "mote" | "leaf" | "snow";
-  line: string;
+  assetNote: string;
 }
 
 export interface Scene {
@@ -99,7 +99,8 @@ export const seasons: Season[] = [
     canvas: "#f4eee9",
     image: "assets/worldclaw-spring.webp",
     particle: "petal",
-    line: "Blossom terrain, river paths, and editable structures.",
+    assetNote:
+      "Scatter assets are built through 3D coding; all other objects are produced by 3D generative models.",
   },
   {
     id: "summer",
@@ -109,7 +110,8 @@ export const seasons: Season[] = [
     canvas: "#eef1e8",
     image: "assets/worldclaw-summer.webp",
     particle: "mote",
-    line: "Dense vegetation, clear water, and sunlit relief.",
+    assetNote:
+      "Scatter assets are sourced from Sketchfab; all other objects are produced by 3D generative models.",
   },
   {
     id: "autumn",
@@ -119,7 +121,8 @@ export const seasons: Season[] = [
     canvas: "#f1e9df",
     image: "assets/worldclaw-autumn.webp",
     particle: "leaf",
-    line: "Layered forests, weathered rock, and warm atmosphere.",
+    assetNote:
+      "Scatter assets and all other objects are produced by 3D generative models.",
   },
   {
     id: "winter",
@@ -129,7 +132,8 @@ export const seasons: Season[] = [
     canvas: "#edf0f1",
     image: "assets/worldclaw-winter.webp",
     particle: "snow",
-    line: "Snow fields, frozen channels, and alpine formations.",
+    assetNote:
+      "Scatter assets and all other objects are produced by 3D generative models.",
   },
 ];
 
