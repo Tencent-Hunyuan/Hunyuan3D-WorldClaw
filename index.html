@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f1efe8" />
+    <script>
+      try {
+        const savedTheme = localStorage.getItem("worldclaw-theme");
+        const systemTheme = matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light";
+        document.documentElement.dataset.theme = savedTheme || systemTheme;
+      } catch {
+        document.documentElement.dataset.theme = "light";
+      }
+      document
+        .querySelector('meta[name="theme-color"]')
+        ?.setAttribute(
+          "content",
+          document.documentElement.dataset.theme === "dark"
+            ? "#161613"
+            : "#f1efe8",
+        );
+    </script>
+    <title>WorldClaw — Agentic Open-World 3D Scene Generation</title>
+    <meta
+      name="description"
+      content="WorldClaw is an agentic framework that turns one open-ended prompt into an explicit, explorable, and editable open-world 3D scene."
+    />
+    <meta
+      name="keywords"
+      content="WorldClaw, Hunyuan3D, 3D generation, agentic AI, open world, terrain generation, computer graphics"
+    />
+    <meta name="author" content="Tencent Hunyuan3D" />
+    <meta name="color-scheme" content="light dark" />
+
+    <!--
+      Open Graph requires absolute URLs; scrapers do not resolve relative ones
+      reliably. This is the only place the deployed origin is hardcoded — update
+      all four tags below together if the page moves to another repo or domain.
+      Current target: https://longhz140516.github.io/WorldClaw/
+    -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="WorldClaw" />
+    <meta property="og:url" content="https://longhz140516.github.io/WorldClaw/" />
+    <meta
+      property="og:title"
+      content="WorldClaw: Agentic Open-World 3D Scene Generation at Scale"
+    />
+    <meta
+      property="og:description"
+      content="From one open-ended prompt to an explicit, explorable, and editable 3D world."
+    />
+    <meta
+      property="og:image"
+      content="https://longhz140516.github.io/WorldClaw/assets/worldclaw-share.jpg"
+    />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta
+      property="og:image:alt"
+      content="WorldClaw — agentic open-world 3D scene generation, shown with an isometric generated world"
+    />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta
+      name="twitter:title"
+      content="WorldClaw: Agentic Open-World 3D Scene Generation at Scale"
+    />
+    <meta
+      name="twitter:description"
+      content="From one open-ended prompt to an explicit, explorable, and editable 3D world."
+    />
+    <meta
+      name="twitter:image"
+      content="https://longhz140516.github.io/WorldClaw/assets/worldclaw-share.jpg"
+    />
+    <meta
+      name="twitter:image:alt"
+      content="WorldClaw — agentic open-world 3D scene generation, shown with an isometric generated world"
+    />
+
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png" />
+    <link rel="preload" as="image" href="./assets/worldclaw-spring.webp" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

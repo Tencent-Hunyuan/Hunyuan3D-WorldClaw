@@ -1,0 +1,19 @@
+# Dependencies and build output
+node_modules
+dist
+*.tsbuildinfo
+
+# Local files
+.DS_Store
+*.local
+.env
+.env.*
+.tmp
+
+# Editor files
+.vscode/*
+!.vscode/extensions.json
+.idea
+
+# macOS
+.DS_Store
