@@ -2868,6 +2868,39 @@ figcaption {
   color: var(--accent);
 }
 
+/*
+ * Ownership and licence notice. Sits quieter than the nav above it, and runs
+ * the two paragraphs side by side so the block stays shallow instead of
+ * stacking into a tall column against empty space on the right.
+ */
+.footer-notice {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: .6rem clamp(2rem, 5vw, 4rem);
+  padding-block: 1.35rem;
+  border-top: 1px solid var(--line);
+}
+
+.footer-notice p {
+  color: var(--muted);
+  font-size: .68rem;
+  line-height: 1.7;
+  text-wrap: pretty;
+}
+
+.footer-notice a {
+  color: var(--ink-soft);
+  font-weight: 620;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  text-underline-offset: .18em;
+  transition: color var(--dur) var(--ease-out);
+}
+
+.footer-notice a:hover {
+  color: var(--accent);
+}
+
 .footer-base {
   display: flex;
   align-items: center;
@@ -2904,6 +2937,176 @@ figcaption {
 
 .footer-top:hover svg {
   transform: translateY(-3px);
+}
+
+/* ============================================================
+   Standalone subpages (attributions)
+   ============================================================ */
+
+.subpage-bar {
+  position: sticky;
+  z-index: var(--z-nav);
+  top: 0;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(18px) saturate(140%);
+  -webkit-backdrop-filter: blur(18px) saturate(140%);
+}
+
+.subpage-bar-inner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1.5rem;
+  min-height: var(--nav-height);
+}
+
+.subpage-bar-actions {
+  display: flex;
+  align-items: center;
+  gap: 1.1rem;
+}
+
+.subpage-back {
+  display: inline-flex;
+  align-items: center;
+  gap: .45rem;
+  color: var(--ink-soft);
+  font-size: .76rem;
+  font-weight: 600;
+  transition: color var(--dur) var(--ease-out);
+}
+
+.subpage-back svg {
+  width: .82rem;
+  height: .82rem;
+  transition: transform var(--dur) var(--ease-spring);
+}
+
+.subpage-back:hover {
+  color: var(--accent);
+}
+
+.subpage-back:hover svg {
+  transform: translateX(-3px);
+}
+
+.subpage {
+  min-height: 70vh;
+}
+
+.subpage-intro {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.05fr);
+  gap: clamp(1.5rem, 4vw, 3.5rem);
+  align-items: start;
+}
+
+.subpage-intro h1 {
+  max-width: 14ch;
+  font-family: var(--font-display);
+  font-size: clamp(2.1rem, 4vw, 3.6rem);
+  font-weight: 600;
+  letter-spacing: -.045em;
+  line-height: 1.02;
+}
+
+.subpage-intro p {
+  color: var(--ink-soft);
+  font-size: .9rem;
+  line-height: 1.78;
+}
+
+.subpage-intro a {
+  color: var(--ink);
+  font-weight: 620;
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 55%, transparent);
+  text-underline-offset: .18em;
+  transition: color var(--dur) var(--ease-out);
+}
+
+.subpage-intro a:hover {
+  color: var(--accent);
+}
+
+.attribution-list {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 24rem), 1fr));
+  gap: 1px;
+  margin-top: clamp(2.75rem, 5vw, 4.25rem);
+  padding: 1px;
+  border-radius: var(--r-md);
+  background: var(--line);
+  counter-reset: attribution;
+  list-style: none;
+  overflow: hidden;
+}
+
+.attribution-list li {
+  display: grid;
+  align-content: start;
+  gap: .38rem;
+  padding: 1.35rem 1.5rem;
+  background: var(--surface);
+  counter-increment: attribution;
+}
+
+/* Ordinal as a quiet mono marker, matching the section index treatment. */
+.attribution-list li::before {
+  color: var(--muted);
+  content: counter(attribution, decimal-leading-zero);
+  font-family: var(--font-mono);
+  font-size: .56rem;
+  letter-spacing: .16em;
+}
+
+.attribution-title {
+  display: inline-flex;
+  align-items: baseline;
+  gap: .4rem;
+  color: var(--ink);
+  font-size: .92rem;
+  font-weight: 620;
+  letter-spacing: -.014em;
+  line-height: 1.35;
+  transition: color var(--dur) var(--ease-out);
+}
+
+.attribution-title svg {
+  width: .72rem;
+  height: .72rem;
+  flex: none;
+  opacity: .5;
+  transition: transform var(--dur) var(--ease-spring),
+    opacity var(--dur) var(--ease-out);
+}
+
+.attribution-title:hover {
+  color: var(--accent);
+}
+
+.attribution-title:hover svg {
+  opacity: 1;
+  transform: translate(2px, -2px);
+}
+
+.attribution-meta {
+  color: var(--muted);
+  font-size: .74rem;
+  line-height: 1.62;
+}
+
+.attribution-meta a {
+  color: var(--ink-soft);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--accent) 45%, transparent);
+  text-underline-offset: .16em;
+  transition: color var(--dur) var(--ease-out);
+}
+
+.attribution-meta a:hover {
+  color: var(--accent);
 }
 
 /* ============================================================
@@ -3025,6 +3228,15 @@ figcaption {
 
   .footer-brand {
     grid-column: 1 / -1;
+  }
+
+  .subpage-intro {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.25rem;
+  }
+
+  .subpage-intro h1 {
+    max-width: none;
   }
 }
 
@@ -3190,10 +3402,28 @@ figcaption {
     gap: 2rem;
   }
 
+  .footer-notice {
+    grid-template-columns: minmax(0, 1fr);
+    gap: .7rem;
+  }
+
   .footer-base {
     flex-direction: column;
     align-items: flex-start;
     gap: .75rem;
+  }
+
+  /* The back link carries the same meaning, so the wordmark can go. */
+  .subpage-bar .brand-word {
+    display: none;
+  }
+
+  .subpage-bar-actions {
+    gap: .75rem;
+  }
+
+  .attribution-list li {
+    padding: 1.15rem 1.2rem;
   }
 
   .render-lightbox > footer {

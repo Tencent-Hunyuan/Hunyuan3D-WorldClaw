@@ -1,4 +1,5 @@
 import { ArrowUp } from "@phosphor-icons/react";
+import { attributionsUrl } from "../data/attributions";
 import { paperUrl, sections } from "../data/content";
 import { BrandMark } from "./BrandMark";
 
@@ -34,7 +35,22 @@ export function Footer() {
             ArXiv
           </a>
           <a href="#citation">BibTeX</a>
+          <a href={attributionsUrl}>Attributions</a>
         </nav>
+      </div>
+
+      <div className="page-shell footer-notice">
+        <p>
+          Unless otherwise stated, all images, 3D assets, and other visual
+          content displayed on this website are owned by Tencent. No rights or
+          licenses to Tencent-owned content are granted. All rights reserved.
+        </p>
+        <p>
+          Certain visual content incorporates third-party materials, which
+          remain owned by their respective creators and are licensed under
+          Creative Commons Attribution. Attribution information for such
+          third-party materials is available <a href={attributionsUrl}>here</a>.
+        </p>
       </div>
 
       <div className="page-shell footer-base">

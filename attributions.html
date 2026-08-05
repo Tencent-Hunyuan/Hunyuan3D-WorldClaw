@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f1efe8" />
+    <script>
+      try {
+        const savedTheme = localStorage.getItem("worldclaw-theme");
+        const systemTheme = matchMedia("(prefers-color-scheme: dark)").matches
+          ? "dark"
+          : "light";
+        document.documentElement.dataset.theme = savedTheme || systemTheme;
+      } catch {
+        document.documentElement.dataset.theme = "light";
+      }
+      document
+        .querySelector('meta[name="theme-color"]')
+        ?.setAttribute(
+          "content",
+          document.documentElement.dataset.theme === "dark"
+            ? "#161613"
+            : "#f1efe8",
+        );
+    </script>
+    <title>Attributions — WorldClaw</title>
+    <meta
+      name="description"
+      content="Attribution for the third-party materials incorporated into visual content on the WorldClaw project page."
+    />
+    <meta name="author" content="Tencent Hunyuan3D" />
+    <meta name="color-scheme" content="light dark" />
+
+    <link rel="icon" type="image/svg+xml" href="./favicon.svg" />
+    <link rel="apple-touch-icon" href="./assets/apple-touch-icon.png" />
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/attributions.tsx"></script>
+  </body>
+</html>

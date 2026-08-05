@@ -1,1 +1,1 @@
-# WorldClaw
+# Hunyuan3D-WorldClaw
