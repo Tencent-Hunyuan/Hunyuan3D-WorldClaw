@@ -33,6 +33,7 @@ import {
 } from "../data/content";
 import { Reveal } from "./Reveal";
 import { RenderLightbox, RenderPanel } from "./RenderPanel";
+import { SceneViews } from "./SceneViews";
 import { SectionHeader } from "./SectionHeader";
 
 const sceneIcons = {
@@ -200,12 +201,12 @@ export function Gallery() {
         <SectionHeader
           index="01"
           eyebrow="Results"
-          title="Eleven worlds, rendered four ways."
+          title="Eleven worlds, from orbit to ground."
           lede={
             <p>
-              Every world ships as an isometric layout plus one camera orbit
-              rendered four ways: appearance, instance masks, surface normals,
-              and depth.
+              Each world ships as an isometric layout, stills from an aerial
+              orbit and a ground-level walk, and a camera orbit rendered four
+              ways: appearance, instance masks, surface normals, and depth.
             </p>
           }
         />
@@ -274,6 +275,30 @@ export function Gallery() {
           role="tabpanel"
           aria-label={`${activeScene.name} renders`}
         >
+          {/*
+            The prompt is what produced everything below it, so it reads as one
+            quiet line across the top rather than competing with the renders for
+            the column beside the layout.
+          */}
+          <Reveal className="scene-prompt" delay={0.06} amount={0.1}>
+            <p className="scene-prompt-body">
+              <span className="scene-prompt-label">Prompt</span>{" "}
+              {activeScene.prompt}
+            </p>
+            <dl className="scene-prompt-meta">
+              <div>
+                <dt>World</dt>
+                <dd>
+                  {String(sceneIndex + 1).padStart(2, "0")} / {scenes.length}
+                </dd>
+              </div>
+              <div>
+                <dt>Family</dt>
+                <dd>{activeScene.type}</dd>
+              </div>
+            </dl>
+          </Reveal>
+
           <Reveal className="scene-viewer" delay={0.08} amount={0.06}>
             <figure className="scene-layout">
               <div className="scene-layout-frame">
@@ -299,26 +324,11 @@ export function Gallery() {
               </figcaption>
             </figure>
 
-            <div className="scene-brief">
-              <span className="scene-brief-label">Prompt</span>
-              <blockquote>{activeScene.prompt}</blockquote>
-              <dl className="scene-brief-meta">
-                <div>
-                  <dt>World</dt>
-                  <dd>
-                    {String(sceneIndex + 1).padStart(2, "0")} / {scenes.length}
-                  </dd>
-                </div>
-                <div>
-                  <dt>Family</dt>
-                  <dd>{activeScene.type}</dd>
-                </div>
-                <div>
-                  <dt>Channels</dt>
-                  <dd>{channels.length} synchronized</dd>
-                </div>
-              </dl>
-            </div>
+            <SceneViews
+              key={activeScene.id}
+              scene={activeScene}
+              eager={sceneIndex === 0}
+            />
           </Reveal>
 
           <Reveal className="channel-block" delay={0.06} amount={0.05}>

@@ -1,5 +1,6 @@
 export type SeasonId = "spring" | "summer" | "autumn" | "winter";
 export type ChannelId = "rgb" | "instance" | "normal" | "depth";
+export type ViewTrackId = "orbit" | "walk";
 
 /**
  * Single source of truth for every "arXiv" link on the page.
@@ -475,6 +476,72 @@ export function channelPoster(scene: Scene, channel: ChannelId) {
 /** Layout renders follow the same convention: `assets/layouts/<scene-id>.webp`. */
 export function layoutRender(scene: Scene) {
   return scene.layout ?? `assets/layouts/${scene.id}.webp`;
+}
+
+/* ------------------------------------------------------------------ *
+ * Camera views
+ *
+ * Every world is photographed twice: an orbit that reads the whole
+ * composition from above, and a walk that puts the camera on the ground
+ * inside it. Three shots per track, written by scripts/build-view-stills.py
+ * as `assets/views/<scene-id>/<track>-<n>.webp` plus a `-lg` full frame.
+ * ------------------------------------------------------------------ */
+
+export interface ViewTrack {
+  id: ViewTrackId;
+  label: string;
+  detail: string;
+}
+
+export interface ViewShot {
+  id: string;
+  track: ViewTrack;
+  /** 1-based position within the track, as shown on the tile. */
+  shot: number;
+  tile: string;
+  full: string;
+  alt: string;
+}
+
+export const viewTracks: ViewTrack[] = [
+  {
+    id: "orbit",
+    label: "Orbit",
+    detail: "Aerial pass over the finished world",
+  },
+  {
+    id: "walk",
+    label: "Walk",
+    detail: "Ground-level camera inside the scene",
+  },
+];
+
+export const VIEW_SHOTS_PER_TRACK = 3;
+/** Both derivatives are cropped to 4:3, so the enlarged view reframes nothing. */
+export const VIEW_TILE_WIDTH = 640;
+export const VIEW_TILE_HEIGHT = 480;
+export const VIEW_FULL_WIDTH = 1600;
+export const VIEW_FULL_HEIGHT = 1200;
+
+export function sceneViews(scene: Scene, track: ViewTrack): ViewShot[] {
+  return Array.from({ length: VIEW_SHOTS_PER_TRACK }, (_, index) => {
+    const shot = index + 1;
+    const base = `assets/views/${scene.id}/${track.id}-${shot}`;
+
+    return {
+      id: `${track.id}-${shot}`,
+      track,
+      shot,
+      tile: `${base}.webp`,
+      full: `${base}-lg.webp`,
+      alt: `${scene.name}, ${track.label.toLowerCase()} view ${shot} of ${VIEW_SHOTS_PER_TRACK}`,
+    };
+  });
+}
+
+/** Flat orbit-then-walk order, which is what the lightbox steps through. */
+export function sceneViewSequence(scene: Scene): ViewShot[] {
+  return viewTracks.flatMap((track) => sceneViews(scene, track));
 }
 
 export const bibtex = `@article{worldclaw2026,
