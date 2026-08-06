@@ -11,6 +11,15 @@ fills the same frame and switching scenes never reflows the page. The frame
 supplies the backdrop and an accent-tinted cast shadow, so renders should ship
 without a baked background.
 
+The strip under the viewer shows all eleven layouts at once, reading from
+`public/assets/layouts/thumbs/<scene-id>.webp` — 300x220 derivatives totalling
+~130 KB, against ~1.5 MB for the full set. After adding or replacing a layout
+render, regenerate them:
+
+```sh
+scripts/build-layout-thumbs.py
+```
+
 ## Directory convention
 
 Paths are resolved by convention from the scene id in `src/data/content.ts`:

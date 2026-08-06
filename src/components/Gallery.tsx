@@ -26,9 +26,12 @@ import {
 } from "react";
 import {
   LAYOUT_HEIGHT,
+  LAYOUT_THUMB_HEIGHT,
+  LAYOUT_THUMB_WIDTH,
   LAYOUT_WIDTH,
   channels,
   layoutRender,
+  layoutThumb,
   scenes,
 } from "../data/content";
 import { Reveal } from "./Reveal";
@@ -116,14 +119,20 @@ export function Gallery() {
     rail.scrollBy({ left: delta, behavior: "smooth" });
   };
 
+  /* Both pickers write the same state, so the rail and the strip stay in step
+     however the world was chosen. */
+  const pickScene = (index: number) => {
+    setSceneIndex(index);
+    revealSceneChip(index);
+  };
+
   const selectScene = (index: number) => {
     if (didDragRef.current) {
       didDragRef.current = false;
       return;
     }
 
-    setSceneIndex(index);
-    revealSceneChip(index);
+    pickScene(index);
   };
 
   const scrollRail = (direction: -1 | 1) => {
@@ -329,6 +338,45 @@ export function Gallery() {
               scene={activeScene}
               eager={sceneIndex === 0}
             />
+
+            {/*
+              A second, pictorial way into the same eleven worlds. The rail up
+              top names them; this one shows them, and reading as a filmstrip
+              it also answers "how far along am I" at a glance. Not a tablist:
+              the rail already owns that role for #scene-detail, and two
+              tablists driving one panel is a worse story for screen readers
+              than a plain set of buttons carrying aria-current.
+            */}
+            <nav className="layout-strip" aria-label="Jump to a world">
+              {scenes.map((scene, index) => {
+                const isActive = index === sceneIndex;
+
+                return (
+                  <button
+                    key={scene.id}
+                    type="button"
+                    className={`layout-strip-tile ${isActive ? "is-active" : ""}`}
+                    aria-current={isActive || undefined}
+                    aria-label={`${scene.name}, world ${index + 1} of ${scenes.length}`}
+                    title={scene.name}
+                    onClick={() => pickScene(index)}
+                    style={{ "--tile-accent": scene.accent } as CSSProperties}
+                  >
+                    <img
+                      src={`${import.meta.env.BASE_URL}${layoutThumb(scene)}`}
+                      alt=""
+                      width={LAYOUT_THUMB_WIDTH}
+                      height={LAYOUT_THUMB_HEIGHT}
+                      loading="lazy"
+                      decoding="async"
+                    />
+                    <span className="layout-strip-index" aria-hidden="true">
+                      {String(index + 1).padStart(2, "0")}
+                    </span>
+                  </button>
+                );
+              })}
+            </nav>
           </Reveal>
 
           <Reveal className="channel-block" delay={0.06} amount={0.05}>

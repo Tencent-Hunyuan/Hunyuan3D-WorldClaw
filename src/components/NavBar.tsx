@@ -1,5 +1,6 @@
 import {
   AnimatePresence,
+  type MotionStyle,
   motion,
   useMotionValueEvent,
   useReducedMotion,
@@ -103,7 +104,7 @@ export function NavBar() {
               className={active === section.id ? "is-active" : ""}
             >
               <span className="nav-link-index">{section.index}</span>
-              {section.label}
+              <span className="nav-link-label">{section.label}</span>
             </a>
           ))}
         </nav>
@@ -134,9 +135,14 @@ export function NavBar() {
           </button>
         </div>
 
+        {/*
+          Fed through a custom property rather than `scaleX` so one element can
+          run left-to-right along the top bar and top-to-bottom down the rail,
+          each axis chosen in CSS at the breakpoint that swaps the two.
+        */}
         <motion.span
           className="nav-progress"
-          style={{ scaleX: progress }}
+          style={{ "--nav-progress": progress } as MotionStyle}
           aria-hidden="true"
         />
       </header>
