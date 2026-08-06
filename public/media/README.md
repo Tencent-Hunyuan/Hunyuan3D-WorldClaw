@@ -1,3 +1,25 @@
+# Video assets
+
+## Overview clip
+
+`worldclaw-teaser.mp4` is the 43-second reel between the hero and the results,
+with `worldclaw-teaser.webp` as its poster — the clip's own first frame, so
+there is no jump when playback starts.
+
+The delivered master was 1080p at 8.4 Mbps, or 45 MB, for a frame that is never
+wider than about 800 CSS px. Re-encode a replacement the same way:
+
+```bash
+ffmpeg -i master.mp4 -c:v libx264 -profile:v high -pix_fmt yuv420p \
+  -crf 26 -preset slow -vf 'scale=1280:720:flags=lanczos' \
+  -an -movflags +faststart worldclaw-teaser.mp4
+```
+
+That lands at about 7.7 MB with no visible loss at display size. The element
+uses `preload="none"` and only plays once it scrolls into view, so a reader who
+stops at the hero transfers none of it — and it stays on the poster entirely for
+anyone who has asked the browser to save data.
+
 # Result clips
 
 The results section shows one isometric layout render per world plus four

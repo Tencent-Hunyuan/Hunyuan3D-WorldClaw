@@ -42,6 +42,11 @@ export function ThemeToggle() {
       ) : (
         <SunDim weight="regular" aria-hidden="true" />
       )}
+      {/* Only shown by the opened left rail, where a lone icon would not match
+          the labelled row above it. */}
+      <span className="theme-toggle-label" aria-hidden="true">
+        {nextTheme === "dark" ? "Dark" : "Light"}
+      </span>
     </button>
   );
 }

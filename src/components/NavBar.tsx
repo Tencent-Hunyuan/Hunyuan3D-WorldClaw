@@ -96,6 +96,20 @@ export function NavBar() {
         </a>
 
         <nav className="nav-links" aria-label="Sections">
+          {/*
+            Anchored to the section list rather than the whole bar, so the fill
+            and the highlighted number always agree about where the reader is.
+            Fed through a custom property rather than `scaleX` so one element
+            can run left-to-right along the top bar and top-to-bottom down the
+            rail, each axis chosen in CSS at the breakpoint that swaps the two.
+          */}
+          <span className="nav-progress-track" aria-hidden="true">
+            <motion.span
+              className="nav-progress"
+              style={{ "--nav-progress": progress } as MotionStyle}
+            />
+          </span>
+
           {sections.map((section) => (
             <a
               key={section.id}
@@ -134,17 +148,6 @@ export function NavBar() {
             </span>
           </button>
         </div>
-
-        {/*
-          Fed through a custom property rather than `scaleX` so one element can
-          run left-to-right along the top bar and top-to-bottom down the rail,
-          each axis chosen in CSS at the breakpoint that swaps the two.
-        */}
-        <motion.span
-          className="nav-progress"
-          style={{ "--nav-progress": progress } as MotionStyle}
-          aria-hidden="true"
-        />
       </header>
 
       <AnimatePresence>

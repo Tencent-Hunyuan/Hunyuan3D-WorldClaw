@@ -420,15 +420,29 @@ p {
   box-shadow: var(--shadow-md);
 }
 
-.nav-progress {
+/*
+ * Reading progress, drawn as a filled portion of a visible track. Without the
+ * track the accent alone reads as a stray line: there is nothing to tell you
+ * how much of the run it covers.
+ */
+.nav-progress-track {
   position: absolute;
-  bottom: 3px;
-  left: 12%;
-  width: 76%;
+  bottom: -7px;
+  left: 0;
+  overflow: hidden;
+  width: 100%;
   height: 2px;
   border-radius: 999px;
+  background: color-mix(in srgb, var(--ink) 9%, transparent);
+}
+
+.nav-progress {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
   background: var(--accent);
-  opacity: .7;
+  opacity: .85;
   transform: scaleX(var(--nav-progress, 0));
   transform-origin: 0 50%;
 }
@@ -443,10 +457,14 @@ p {
   letter-spacing: -.028em;
 }
 
+/* flex: none throughout the nav: on the collapsed rail the labels are still
+   laid out at full width behind the clip, so anything shrinkable gets squeezed
+   to a sliver by siblings it cannot fit beside. */
 .brand-mark {
   display: grid;
   width: 32px;
   height: 32px;
+  flex: none;
   place-items: center;
   border-radius: 10px;
   background: var(--ink);
@@ -471,6 +489,7 @@ p {
 }
 
 .nav-links {
+  position: relative;
   display: flex;
   align-items: center;
   gap: .1rem;
@@ -493,6 +512,7 @@ p {
 }
 
 .nav-link-index {
+  flex: none;
   color: color-mix(in srgb, var(--muted) 55%, transparent);
   font-family: var(--font-mono);
   font-size: .56rem;
@@ -538,6 +558,7 @@ p {
 .nav-paper-link svg {
   width: .92rem;
   height: .92rem;
+  flex: none;
 }
 
 .nav-paper-link:hover {
@@ -546,6 +567,9 @@ p {
   color: var(--ink);
 }
 
+/* Same hover as the ArXiv pill beside it. It used to tilt, which read as a
+   quirk on the round button and as a falling-over card once the rail stretched
+   it to full width. */
 .theme-toggle {
   display: grid;
   width: 38px;
@@ -558,24 +582,32 @@ p {
   cursor: pointer;
   transition: background-color var(--dur) var(--ease-out),
     border-color var(--dur) var(--ease-out),
-    color var(--dur) var(--ease-out),
-    transform var(--dur) var(--ease-spring);
+    color var(--dur) var(--ease-out);
 }
 
 .theme-toggle:hover {
   border-color: var(--line-strong);
   background: color-mix(in srgb, var(--ink) 6%, transparent);
   color: var(--ink);
-  transform: rotate(-14deg);
 }
 
-.theme-toggle:active {
-  transform: scale(.94);
+.theme-toggle-label {
+  display: none;
 }
 
 .theme-toggle svg {
   width: 1.02rem;
   height: 1.02rem;
+  flex: none;
+  transition: transform var(--dur-slow) var(--ease-spring);
+}
+
+.theme-toggle:hover svg {
+  transform: rotate(-16deg);
+}
+
+.theme-toggle:active svg {
+  transform: rotate(-16deg) scale(.9);
 }
 
 .nav-toggle {
@@ -712,7 +744,11 @@ p {
     justify-content: flex-start;
     gap: .8rem;
     padding: .7rem .65rem;
-    border-radius: var(--r-lg);
+
+    /* Half the collapsed width, so at rest the rail is a true capsule — the
+       same pill vocabulary as the top bar and every chip on the page — and
+       stays one when hover widens it. */
+    border-radius: calc(var(--rail-width) / 2);
     transform: translateY(-50%);
     transition: width var(--dur) var(--ease-spring),
       background-color var(--dur-slow) var(--ease-out),
@@ -793,18 +829,43 @@ p {
     white-space: nowrap;
   }
 
+  /* Matches the ArXiv row above it: icon on the rail's centreline, label
+     sliding out with the rest when the rail opens. */
   .theme-toggle {
+    display: inline-flex;
     width: 100%;
+    align-items: center;
+    justify-content: flex-start;
+    gap: .55rem;
+    padding-inline: .72rem;
     border-radius: 999px;
+    font-size: .74rem;
+    font-weight: 620;
   }
 
-  /* Runs down the rail's inner edge, clear of the numbers. */
-  .nav-progress {
-    top: 6%;
+  .theme-toggle-label {
+    display: block;
+    opacity: 0;
+    white-space: nowrap;
+    transition: opacity var(--dur-fast) var(--ease-out);
+  }
+
+  .site-nav:hover .theme-toggle-label,
+  .site-nav:focus-within .theme-toggle-label {
+    opacity: 1;
+  }
+
+  /* Turned on its side, hugging the rail's inner edge beside the numbers and
+     running exactly the height of the section list. */
+  .nav-progress-track {
+    top: 0;
     bottom: auto;
-    left: 3px;
+    left: -1px;
     width: 2px;
-    height: 88%;
+    height: 100%;
+  }
+
+  .nav-progress {
     transform: scaleY(var(--nav-progress, 0));
     transform-origin: 50% 0;
   }
@@ -1999,47 +2060,269 @@ figcaption {
 }
 
 /* ============================================================
-   Teaser Video
+   Overview video
    ============================================================ */
 
-.teaser-video {
-  border-top: 1px solid var(--line);
-  background: var(--bg);
-}
-
-.teaser-video-wrap {
+/*
+ * Sits between the hero and the results as a short bridge, so it runs on
+ * tighter padding than a full section and pairs the clip with a note rather
+ * than leaving it alone on an empty band.
+ */
+.teaser {
   position: relative;
-  cursor: pointer;
-  border-radius: var(--r-xl);
   overflow: hidden;
+  padding-block: clamp(3.5rem, 6vw, 6rem);
+  border-top: 1px solid var(--line);
+  background: var(--surface);
 }
 
-.teaser-video-player {
-  width: 100%;
-  display: block;
-}
-
-.teaser-video-toggle {
+/* One soft accent bloom behind the plate, so the dark frame is lifted off the
+   surface instead of being dropped onto it. */
+.teaser::before {
   position: absolute;
-  bottom: 1rem;
-  right: 1rem;
+  z-index: 0;
+  top: -30%;
+  left: 50%;
+  width: min(80rem, 120%);
+  height: 90%;
+  background: radial-gradient(
+    ellipse 46% 58% at 50% 50%,
+    color-mix(in srgb, var(--accent) 11%, transparent),
+    transparent 72%
+  );
+  content: '';
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.teaser > .page-shell {
+  position: relative;
+  z-index: 1;
+}
+
+.teaser-rail {
   display: flex;
   align-items: center;
-  justify-content: center;
-  width: 2.5rem;
-  height: 2.5rem;
-  border: none;
-  border-radius: 50%;
-  background: rgb(0 0 0 / 50%);
-  color: #fff;
-  opacity: 0;
-  transition: opacity .25s;
-  pointer-events: none;
+  gap: .9rem;
 }
 
-.teaser-video-wrap:hover .teaser-video-toggle,
-.teaser-video-wrap.is-paused .teaser-video-toggle {
+.teaser-rail-meta {
+  color: var(--muted);
+  font-family: var(--font-mono);
+  font-size: .6rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .12em;
+}
+
+.teaser-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 1.75fr) minmax(0, 1fr);
+  gap: clamp(1.5rem, 3.2vw, 3rem);
+  align-items: center;
+  margin-top: clamp(1.5rem, 2.6vw, 2.25rem);
+}
+
+.teaser-frame {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--r-lg);
+  /* The clip opens on a near-black title card, so the plate is dark rather
+     than a light surface the video would punch a hole in. */
+  background: #101010;
+  box-shadow: var(--shadow-lg);
+}
+
+.teaser-player {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.teaser-controls {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  display: flex;
+  align-items: center;
+  gap: .75rem;
+  padding: 2.5rem .95rem .8rem;
+  background: linear-gradient(
+    to top,
+    rgb(8 8 7 / 78%),
+    rgb(8 8 7 / 0%)
+  );
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease-out);
+}
+
+/* Kept reachable by keyboard: focus inside the bar reveals it too. A stopped
+   clip keeps them up, since that is when there is something to press. */
+.teaser-frame:hover .teaser-controls,
+.teaser-frame:focus-within .teaser-controls,
+.teaser-frame.is-paused .teaser-controls {
   opacity: 1;
+}
+
+/* Touch has nothing to hover with. */
+@media (hover: none) {
+  .teaser-controls {
+    opacity: 1;
+  }
+}
+
+.teaser-play,
+.teaser-expand {
+  display: grid;
+  width: 34px;
+  height: 34px;
+  flex: none;
+  place-items: center;
+  border: 1px solid rgb(255 255 255 / 20%);
+  border-radius: 999px;
+  background: rgb(16 16 14 / 55%);
+  color: #fff;
+  cursor: pointer;
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  transition: background-color var(--dur) var(--ease-out),
+    border-color var(--dur) var(--ease-out);
+}
+
+.teaser-play svg,
+.teaser-expand svg {
+  width: .88rem;
+  height: .88rem;
+}
+
+.teaser-play:hover,
+.teaser-expand:hover {
+  border-color: rgb(255 255 255 / 42%);
+  background: rgb(32 32 28 / 78%);
+}
+
+.teaser-scrub {
+  height: 18px;
+  flex: 1;
+  padding: 0;
+  border: 0;
+  margin: 0;
+  appearance: none;
+  -webkit-appearance: none;
+  background: transparent;
+  cursor: pointer;
+}
+
+.teaser-scrub::-webkit-slider-runnable-track {
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0 var(--played, 0%),
+    rgb(255 255 255 / 26%) var(--played, 0%) 100%
+  );
+}
+
+.teaser-scrub::-moz-range-track {
+  height: 3px;
+  border-radius: 999px;
+  background: linear-gradient(
+    to right,
+    var(--accent) 0 var(--played, 0%),
+    rgb(255 255 255 / 26%) var(--played, 0%) 100%
+  );
+}
+
+/* Hidden until the pointer or focus arrives, so at rest the bar is one clean
+   line across the foot of the frame. */
+.teaser-scrub::-webkit-slider-thumb {
+  width: 11px;
+  height: 11px;
+  border: 0;
+  border-radius: 999px;
+  appearance: none;
+  -webkit-appearance: none;
+  background: #fff;
+  margin-top: -4px;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease-out);
+}
+
+.teaser-scrub::-moz-range-thumb {
+  width: 11px;
+  height: 11px;
+  border: 0;
+  border-radius: 999px;
+  background: #fff;
+  opacity: 0;
+  transition: opacity var(--dur) var(--ease-out);
+}
+
+.teaser-scrub:hover::-webkit-slider-thumb,
+.teaser-scrub:focus-visible::-webkit-slider-thumb {
+  opacity: 1;
+}
+
+.teaser-scrub:hover::-moz-range-thumb,
+.teaser-scrub:focus-visible::-moz-range-thumb {
+  opacity: 1;
+}
+
+.teaser-time {
+  display: inline-flex;
+  flex: none;
+  gap: .3rem;
+  color: rgb(255 255 255 / 82%);
+  font-family: var(--font-mono);
+  font-size: .62rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.teaser-time i {
+  color: rgb(255 255 255 / 40%);
+  font-style: normal;
+}
+
+.teaser-note {
+  display: grid;
+  align-content: center;
+  gap: .85rem;
+}
+
+.teaser-note h2 {
+  max-width: 18ch;
+  font-family: var(--font-display);
+  font-size: clamp(1.35rem, 2vw, 1.95rem);
+  font-weight: 520;
+  letter-spacing: -.038em;
+  line-height: 1.14;
+}
+
+.teaser-note p {
+  max-width: 44ch;
+  color: var(--ink-soft);
+  font-size: .84rem;
+  line-height: 1.66;
+  text-wrap: pretty;
+}
+
+.teaser-note-hint {
+  padding-top: .8rem;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: .74rem;
+}
+
+.teaser-lightbox-player {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  background: #0d0d0b;
 }
 
 /* ============================================================
@@ -3742,6 +4025,16 @@ figcaption {
     max-width: 58ch;
   }
 
+  .teaser-layout {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 1.5rem;
+  }
+
+  .teaser-note h2,
+  .teaser-note p {
+    max-width: none;
+  }
+
   .scene-viewer {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -3900,6 +4193,15 @@ figcaption {
   .scene-layout figcaption {
     grid-template-columns: minmax(0, 1fr);
     gap: .35rem;
+  }
+
+  .teaser-controls {
+    padding: 2rem .7rem .6rem;
+    gap: .5rem;
+  }
+
+  .teaser-time {
+    display: none;
   }
 
   .scene-prompt {

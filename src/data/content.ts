@@ -157,10 +157,10 @@ export interface Contributor {
 }
 
 const authors: Record<string, Person> = {
-  chunchaoGuo: { name: "Chunchao Guo", url: "https://scholar.google.com/citations?user=8wGH7IsAAAAJ" },
+  chunchaoGuo: { name: "Chunchao Guo" },
   yangLi: { name: "Yang Li", url: "https://yang-l1.github.io/" },
-  jinpengLi: { name: "Jinpeng Li", url: "https://github.com/Lijp411" },
-  zilongHuang: { name: "Zilong Huang", url: "https://scholar.google.com/citations?user=Nq2HLEUAAAAJ" },
+  jinpengLi: { name: "Jinpeng Li", url: "https://lijp411.github.io/" },
+  zilongHuang: { name: "Zilong Huang", url: "https://longhz140516.github.io/" },
 };
 
 export const contributors: Contributor[] = [
