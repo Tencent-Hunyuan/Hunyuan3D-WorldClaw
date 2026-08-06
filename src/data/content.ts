@@ -54,6 +54,14 @@ export function channelStill(figureRow: number, column = 0): CropRect {
 export const LAYOUT_WIDTH = 1200;
 export const LAYOUT_HEIGHT = 878;
 
+/**
+ * Strip thumbnails share that aspect but are their own derivative: eleven of
+ * the full renders would cost ~1.5 MB to paint tiles under 100 CSS px.
+ * Regenerate with `scripts/build-layout-thumbs.py` after replacing a layout.
+ */
+export const LAYOUT_THUMB_WIDTH = 300;
+export const LAYOUT_THUMB_HEIGHT = 220;
+
 export interface Season {
   id: SeasonId;
   name: string;
@@ -138,18 +146,35 @@ export const seasons: Season[] = [
   },
 ];
 
-export const contributors = [
+export interface Person {
+  name: string;
+  url?: string;
+}
+
+export interface Contributor {
+  role: string;
+  people: Person[];
+}
+
+const authors: Record<string, Person> = {
+  chunchaoGuo: { name: "Chunchao Guo", url: "https://scholar.google.com/citations?user=8wGH7IsAAAAJ" },
+  yangLi: { name: "Yang Li", url: "https://yang-l1.github.io/" },
+  jinpengLi: { name: "Jinpeng Li", url: "https://github.com/Lijp411" },
+  zilongHuang: { name: "Zilong Huang", url: "https://scholar.google.com/citations?user=Nq2HLEUAAAAJ" },
+};
+
+export const contributors: Contributor[] = [
   {
     role: "Project leaders",
-    people: "Chunchao Guo, Yang Li",
+    people: [authors.chunchaoGuo, authors.yangLi],
   },
   {
     role: "Local planning",
-    people: "Jinpeng Li, Yang Li, Zilong Huang",
+    people: [authors.jinpengLi, authors.yangLi, authors.zilongHuang],
   },
   {
     role: "Terrain generation",
-    people: "Zilong Huang, Yang Li, Jinpeng Li",
+    people: [authors.zilongHuang, authors.yangLi, authors.jinpengLi],
   },
 ];
 
@@ -476,6 +501,15 @@ export function channelPoster(scene: Scene, channel: ChannelId) {
 /** Layout renders follow the same convention: `assets/layouts/<scene-id>.webp`. */
 export function layoutRender(scene: Scene) {
   return scene.layout ?? `assets/layouts/${scene.id}.webp`;
+}
+
+/**
+ * Thumbnails sit in a `thumbs/` subfolder under the same name. A scene with a
+ * hand-placed `layout` override has no generated derivative, so it falls back
+ * to the full render rather than 404ing on a path that was never written.
+ */
+export function layoutThumb(scene: Scene) {
+  return scene.layout ?? `assets/layouts/thumbs/${scene.id}.webp`;
 }
 
 /* ------------------------------------------------------------------ *

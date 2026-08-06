@@ -55,6 +55,21 @@
   --nav-height: 62px;
   --shell: 1320px;
 
+  /*
+   * How much the navigation eats off the top of the page. The top bar covers
+   * its own height; the wide-screen rail covers nothing, so anchor offsets and
+   * the hero's leading space collapse with it. Kept separate from
+   * --nav-height, which still sizes the bar itself and the subpage header.
+   */
+  --nav-offset: var(--nav-height);
+
+  /* Collapsed rail, its distance from the viewport edge, and the width it
+     opens to on hover. --rail-space is the room content leaves for it. */
+  --rail-width: 60px;
+  --rail-edge: 18px;
+  --rail-width-open: 196px;
+  --rail-space: calc(var(--rail-width) + var(--rail-edge));
+
   /* The nav stays above the mobile overlay so its close control is reachable. */
   --z-menu: 50;
   --z-nav: 60;
@@ -100,7 +115,7 @@
 
 html {
   scroll-behavior: smooth;
-  scroll-padding-top: calc(var(--nav-height) + 32px);
+  scroll-padding-top: calc(var(--nav-offset) + 32px);
   background: var(--bg);
 }
 
@@ -221,7 +236,7 @@ p {
 
 .section-pad {
   padding-block: clamp(6.5rem, 10vw, 10.5rem);
-  scroll-margin-top: calc(var(--nav-height) + 28px);
+  scroll-margin-top: calc(var(--nav-offset) + 28px);
 }
 
 .section-header {
@@ -414,6 +429,7 @@ p {
   border-radius: 999px;
   background: var(--accent);
   opacity: .7;
+  transform: scaleX(var(--nav-progress, 0));
   transform-origin: 0 50%;
 }
 
@@ -658,6 +674,142 @@ p {
   font-weight: 640;
 }
 
+/* ------------------------------------------------------------------
+   Wide screens: the bar stands up as a rail down the left edge
+
+   A bar pinned across the top permanently covers a strip of whatever is
+   being read. Turned on its side it sits in margin that was empty anyway.
+   Collapsed it shows only section numbers; hovering or tabbing into it
+   widens the rail over the page, so the labels cost nothing until asked
+   for. Below this width the margins are too thin to donate, and the top
+   bar — with its hamburger at 980px — takes over again.
+   ------------------------------------------------------------------ */
+
+@media (min-width: 1280px) {
+  :root {
+    /* Nothing overlaps the top of the page now, so the anchor offsets and the
+       hero's leading space give back the bar's worth of clearance. */
+    --nav-offset: 0px;
+  }
+
+  /*
+   * Scoped to pages that actually have the rail: attributions.html shares
+   * .page-shell but is headed by .subpage-bar and must keep its full width.
+   * Both sides give up the same room, so the text block stays centred in the
+   * viewport instead of reading as nudged off-axis.
+   */
+  body:has(.site-nav) .page-shell {
+    width: min(var(--shell), calc(100% - 5rem - var(--rail-space) * 2));
+  }
+
+  .site-nav {
+    top: 50%;
+    left: var(--rail-edge);
+    width: var(--rail-width);
+    height: auto;
+    flex-direction: column;
+    align-items: stretch;
+    justify-content: flex-start;
+    gap: .8rem;
+    padding: .7rem .65rem;
+    border-radius: var(--r-lg);
+    transform: translateY(-50%);
+    transition: width var(--dur) var(--ease-spring),
+      background-color var(--dur-slow) var(--ease-out),
+      border-color var(--dur-slow) var(--ease-out),
+      box-shadow var(--dur-slow) var(--ease-out);
+  }
+
+  /* Always reads as a surface: with no page edge behind it, the transparent
+     resting state of the top bar would leave it floating over content. */
+  .site-nav,
+  .site-nav.is-condensed {
+    border-color: var(--line-strong);
+    background: color-mix(in srgb, var(--surface) 88%, transparent);
+    box-shadow: var(--shadow-md);
+  }
+
+  .site-nav:hover,
+  .site-nav:focus-within {
+    width: var(--rail-width-open);
+  }
+
+  /* Labels are laid out at full width the whole time and simply clipped by the
+     rail, so opening it slides them out rather than reflowing the column. */
+  .brand-word,
+  .nav-link-label,
+  .nav-paper-link span {
+    opacity: 0;
+    transition: opacity var(--dur-fast) var(--ease-out);
+  }
+
+  .site-nav:hover .brand-word,
+  .site-nav:hover .nav-link-label,
+  .site-nav:hover .nav-paper-link span,
+  .site-nav:focus-within .brand-word,
+  .site-nav:focus-within .nav-link-label,
+  .site-nav:focus-within .nav-paper-link span {
+    opacity: 1;
+  }
+
+  /* Icons and numbers line up on the collapsed rail's centreline; the padding
+     below is what puts them there, so it moves with --rail-width. */
+  .brand {
+    padding-left: .22rem;
+    white-space: nowrap;
+  }
+
+  .nav-links {
+    flex-direction: column;
+    align-items: stretch;
+    gap: .1rem;
+  }
+
+  .nav-links a {
+    padding-inline: .55rem;
+  }
+
+  .nav-link-index {
+    flex: 0 0 1.35rem;
+    text-align: center;
+  }
+
+  .nav-link-label {
+    white-space: nowrap;
+  }
+
+  .nav-tools {
+    flex-direction: column;
+    align-items: stretch;
+    gap: .3rem;
+    padding-top: .5rem;
+    border-top: 1px solid var(--line);
+  }
+
+  .nav-paper-link {
+    justify-content: flex-start;
+    padding-inline: .72rem;
+    gap: .55rem;
+    white-space: nowrap;
+  }
+
+  .theme-toggle {
+    width: 100%;
+    border-radius: 999px;
+  }
+
+  /* Runs down the rail's inner edge, clear of the numbers. */
+  .nav-progress {
+    top: 6%;
+    bottom: auto;
+    left: 3px;
+    width: 2px;
+    height: 88%;
+    transform: scaleY(var(--nav-progress, 0));
+    transform-origin: 50% 0;
+  }
+}
+
 /* ============================================================
    Hero
    ============================================================ */
@@ -743,7 +895,7 @@ p {
   column-gap: clamp(2rem, 5vw, 5.5rem);
   row-gap: clamp(2rem, 4vh, 3.25rem);
   align-items: center;
-  padding-block: calc(var(--nav-height) + 3.5rem) 2.25rem;
+  padding-block: calc(var(--nav-offset) + 3.5rem) 2.25rem;
 }
 
 .hero-copy {
@@ -1037,6 +1189,18 @@ p {
   font-size: .76rem;
   font-weight: 570;
   line-height: 1.4;
+}
+
+.hero-credits dd a {
+  color: inherit;
+  text-decoration-line: underline;
+  text-decoration-color: rgb(26 26 22 / 25%);
+  text-underline-offset: .15em;
+  transition: text-decoration-color .2s;
+}
+
+.hero-credits dd a:hover {
+  text-decoration-color: currentcolor;
 }
 
 /* Seasonal particles */
@@ -1390,7 +1554,7 @@ p {
 }
 
 .method-detail {
-  scroll-margin-top: calc(var(--nav-height) + 28px);
+  scroll-margin-top: calc(var(--nav-offset) + 28px);
 }
 
 .method-detail > article {
@@ -1399,7 +1563,7 @@ p {
   gap: clamp(2rem, 6vw, 6.5rem);
   padding-block: clamp(2.75rem, 5vw, 4.5rem);
   border-top: 1px solid var(--line);
-  scroll-margin-top: calc(var(--nav-height) + 28px);
+  scroll-margin-top: calc(var(--nav-offset) + 28px);
 }
 
 /*
@@ -1409,7 +1573,7 @@ p {
  */
 .method-detail-meta {
   position: sticky;
-  top: calc(var(--nav-height) + 3rem);
+  top: calc(var(--nav-offset) + 3rem);
   display: grid;
 
   /* Without this the grid item stretches to the row height and has no travel. */
@@ -1835,6 +1999,50 @@ figcaption {
 }
 
 /* ============================================================
+   Teaser Video
+   ============================================================ */
+
+.teaser-video {
+  border-top: 1px solid var(--line);
+  background: var(--bg);
+}
+
+.teaser-video-wrap {
+  position: relative;
+  cursor: pointer;
+  border-radius: var(--r-xl);
+  overflow: hidden;
+}
+
+.teaser-video-player {
+  width: 100%;
+  display: block;
+}
+
+.teaser-video-toggle {
+  position: absolute;
+  bottom: 1rem;
+  right: 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5rem;
+  height: 2.5rem;
+  border: none;
+  border-radius: 50%;
+  background: rgb(0 0 0 / 50%);
+  color: #fff;
+  opacity: 0;
+  transition: opacity .25s;
+  pointer-events: none;
+}
+
+.teaser-video-wrap:hover .teaser-video-toggle,
+.teaser-video-wrap.is-paused .teaser-video-toggle {
+  opacity: 1;
+}
+
+/* ============================================================
    Results
    ============================================================ */
 
@@ -2071,6 +2279,9 @@ figcaption {
   display: grid;
   grid-template-columns: minmax(0, clamp(20rem, 34%, 30rem)) minmax(0, 1fr);
   gap: clamp(1.25rem, 2.6vw, 2.25rem);
+  /* The column gap separates two peers; the only row gap sits under the layout
+     and the views, where the strip already carries its own rule and padding. */
+  row-gap: clamp(.7rem, 1.1vw, .95rem);
   margin-top: 1.35rem;
   align-items: stretch;
 }
@@ -2323,8 +2534,102 @@ figcaption {
   letter-spacing: .1em;
 }
 
+/* ------------------------------------------------------------------
+   World strip: all eleven layouts at thumbnail size, under the viewer
+   ------------------------------------------------------------------ */
+
+/*
+ * Spans both viewer columns: squeezed into the narrow layout column the tiles
+ * would fall under 40px. Auto columns fit all eleven across a wide screen and
+ * let the strip scroll on a narrow one rather than shrinking past legibility.
+ */
+.layout-strip {
+  display: grid;
+  overflow-x: auto;
+  padding-top: clamp(.7rem, 1.1vw, .9rem);
+  border-top: 1px solid var(--line);
+  gap: .5rem;
+  grid-auto-columns: minmax(4.75rem, 1fr);
+  grid-auto-flow: column;
+  grid-column: 1 / -1;
+  scrollbar-width: none;
+}
+
+.layout-strip::-webkit-scrollbar {
+  display: none;
+}
+
+.layout-strip-tile {
+  position: relative;
+  display: block;
+  width: 100%;
+  aspect-ratio: 300 / 220;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  /* Thumbnails are alpha cut-outs like the full renders, so each tile supplies
+     its own sky — same trick as the main frame, tinted per world. */
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--tile-accent) 10%, var(--surface)),
+    var(--surface) 70%
+  );
+  cursor: pointer;
+  opacity: .5;
+  transition: opacity var(--dur) var(--ease-out),
+    border-color var(--dur) var(--ease-out),
+    box-shadow var(--dur) var(--ease-out),
+    transform var(--dur) var(--ease-spring);
+}
+
+.layout-strip-tile img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+.layout-strip-tile:hover,
+.layout-strip-tile:focus-visible {
+  border-color: color-mix(in srgb, var(--tile-accent) 45%, var(--line));
+  opacity: .86;
+  transform: translateY(-2px);
+}
+
+/* The one tile at full strength. Position in the set stays legible from the
+   contrast alone, without reading the numbers. */
+.layout-strip-tile.is-active {
+  border-color: var(--tile-accent);
+  box-shadow: 0 0 0 1px var(--tile-accent),
+    0 8px 20px color-mix(in srgb, var(--tile-accent) 26%, transparent);
+  opacity: 1;
+}
+
+.layout-strip-index {
+  position: absolute;
+  top: .3rem;
+  left: .34rem;
+  padding: .12rem .36rem;
+  border-radius: 999px;
+  background: rgb(12 12 10 / 42%);
+  color: rgb(255 255 255 / 88%);
+  font-family: var(--font-mono);
+  font-size: .46rem;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .08em;
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  transition: background-color var(--dur) var(--ease-out);
+}
+
+.layout-strip-tile.is-active .layout-strip-index {
+  background: var(--tile-accent);
+  color: #fff;
+}
+
 .channel-block {
-  margin-top: clamp(1.5rem, 2.5vw, 2.1rem);
+  margin-top: clamp(1.05rem, 1.7vw, 1.45rem);
 }
 
 .channel-toolbar {
@@ -2332,7 +2637,7 @@ figcaption {
   align-items: center;
   justify-content: space-between;
   gap: 1rem;
-  padding-bottom: 1rem;
+  padding-bottom: .55rem;
   border-bottom: 1px solid var(--line);
 }
 
@@ -2355,16 +2660,19 @@ figcaption {
 
 .playback-toggle {
   display: inline-flex;
-  min-height: 40px;
+  /* Sets the height of the whole toolbar row, so it stays as tight as the
+     24px pointer-target floor allows rather than the 44px used for the
+     chips, which are the primary way through the section. */
+  min-height: 32px;
   align-items: center;
-  gap: .5rem;
-  padding-inline: 1rem;
+  gap: .45rem;
+  padding-inline: .85rem;
   border: 1px solid var(--line);
   border-radius: 999px;
   background: transparent;
   color: var(--ink-soft);
   cursor: pointer;
-  font-size: .72rem;
+  font-size: .7rem;
   font-weight: 620;
   transition: border-color var(--dur) var(--ease-out),
     background-color var(--dur) var(--ease-out),
@@ -2387,7 +2695,7 @@ figcaption {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: 1rem;
-  margin-top: 1.5rem;
+  margin-top: .9rem;
 }
 
 .render-panel {
@@ -3399,7 +3707,7 @@ figcaption {
     grid-template-areas: 'copy'
       'visual'
       'rail';
-    padding-top: calc(var(--nav-height) + 4.5rem);
+    padding-top: calc(var(--nav-offset) + 4.5rem);
     padding-bottom: 3.5rem;
     row-gap: clamp(2.5rem, 6vh, 4rem);
   }

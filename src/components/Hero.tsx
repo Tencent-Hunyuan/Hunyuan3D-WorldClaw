@@ -45,11 +45,10 @@ const seasonIcons = {
   winter: Snowflake,
 };
 
-const ROTATE_INTERVAL = 30000;
+const ROTATE_INTERVAL = 10000;
 
 export function Hero() {
   const [activeIndex, setActiveIndex] = useState(0);
-  const [autoRotate, setAutoRotate] = useState(true);
   const reduceMotion = useReducedMotion();
   const activeSeason = seasons[activeIndex];
   const baseUrl = import.meta.env.BASE_URL;
@@ -60,19 +59,19 @@ export function Hero() {
   const imageRotateX = useTransform(springX, (value) => `${value}deg`);
   const imageRotateY = useTransform(springY, (value) => `${value}deg`);
 
+  /*
+   * activeIndex is a dependency so a manual pick restarts the countdown rather
+   * than inheriting the remainder of the current tick — otherwise a click made
+   * moments before a tick would flip the season again almost immediately.
+   */
   useEffect(() => {
-    if (!autoRotate || reduceMotion) return;
+    if (reduceMotion) return;
     const timer = window.setInterval(() => {
       if (document.hidden) return;
       setActiveIndex((index) => (index + 1) % seasons.length);
     }, ROTATE_INTERVAL);
     return () => window.clearInterval(timer);
-  }, [autoRotate, reduceMotion]);
-
-  const selectSeason = (index: number) => {
-    setAutoRotate(false);
-    setActiveIndex(index);
-  };
+  }, [reduceMotion, activeIndex]);
 
   const themeStyle: ThemeStyle = {
     "--season-accent": activeSeason.accent,
@@ -99,7 +98,7 @@ export function Hero() {
     event.preventDefault();
     const offset = event.key === "ArrowRight" ? 1 : seasons.length - 1;
     const next = (activeIndex + offset) % seasons.length;
-    selectSeason(next);
+    setActiveIndex(next);
     const buttons =
       event.currentTarget.querySelectorAll<HTMLButtonElement>("button");
     buttons[next]?.focus();
@@ -165,7 +164,7 @@ export function Hero() {
           </p>
           <div className="hero-title-lockup">
             <h1>WorldClaw</h1>
-            <p>Agentic open-world 3D scene generation at scale</p>
+            <p>Agentic 3D open-world generation at scale</p>
           </div>
           <p className="hero-summary">
             Turn one open-ended prompt into an explicit, explorable, and editable
@@ -263,7 +262,7 @@ export function Hero() {
                 <button
                   type="button"
                   className={`season-chip ${isActive ? "is-active" : ""}`}
-                  onClick={() => selectSeason(index)}
+                  onClick={() => setActiveIndex(index)}
                   aria-pressed={isActive}
                   tabIndex={isActive ? 0 : -1}
                   key={season.id}
@@ -292,7 +291,24 @@ export function Hero() {
             {contributors.map((contributor) => (
               <div key={contributor.role}>
                 <dt>{contributor.role}</dt>
-                <dd>{contributor.people}</dd>
+                <dd>
+                  {contributor.people.map((person, i) => (
+                    <span key={person.name}>
+                      {i > 0 && ", "}
+                      {person.url ? (
+                        <a
+                          href={person.url}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          {person.name}
+                        </a>
+                      ) : (
+                        person.name
+                      )}
+                    </span>
+                  ))}
+                </dd>
               </div>
             ))}
           </dl>

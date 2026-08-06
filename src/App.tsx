@@ -6,6 +6,7 @@ import { Gallery } from "./components/Gallery";
 import { Hero } from "./components/Hero";
 import { NavBar } from "./components/NavBar";
 import { Overview } from "./components/Overview";
+import { TeaserVideo } from "./components/TeaserVideo";
 
 const Method = lazy(() =>
   import("./components/Method").then((module) => ({
@@ -23,6 +24,7 @@ export default function App() {
       <NavBar />
       <main id="main-content">
         <Hero />
+        <TeaserVideo />
         <Gallery />
         <Overview />
         <Suspense
