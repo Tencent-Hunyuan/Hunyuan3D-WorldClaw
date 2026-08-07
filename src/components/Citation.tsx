@@ -82,19 +82,19 @@ export function Citation() {
                 <dd>2026</dd>
               </div>
               <div>
-                <dt>Team</dt>
-                <dd>Tencent Hunyuan3D</dd>
+                <dt>arXiv</dt>
+                <dd>2608.05248</dd>
               </div>
               <div>
                 <dt>Entry type</dt>
-                <dd>article</dd>
+                <dd>misc</dd>
               </div>
             </dl>
           </Reveal>
 
           <Reveal className="bibtex-panel" delay={0.14}>
             <div className="bibtex-toolbar">
-              <span>worldclaw2026.bib</span>
+              <span>worldclaw.bib</span>
               <button
                 type="button"
                 onClick={copyCitation}

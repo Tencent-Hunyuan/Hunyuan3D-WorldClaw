@@ -2,6 +2,7 @@ export type SeasonId = "spring" | "summer" | "autumn" | "winter";
 export type ChannelId = "rgb" | "instance" | "normal" | "depth";
 export type ViewTrackId = "orbit" | "walk";
 
+/** Single source of truth for the paper and code links across the page. */
 export const paperUrl = "https://arxiv.org/abs/2608.05248";
 export const codeUrl = "https://github.com/Tencent-Hunyuan/Hunyuan3D-WorldClaw";
 
@@ -571,9 +572,12 @@ export function sceneViewSequence(scene: Scene): ViewShot[] {
   return viewTracks.flatMap((track) => sceneViews(scene, track));
 }
 
-export const bibtex = `@article{worldclaw2026,
-  title   = {WorldClaw: Agentic Open-World 3D Scene Generation at Scale},
-  author  = {Tencent Hunyuan3D Team},
-  year    = {2026},
-  month   = {July}
+export const bibtex = `@misc{guo2026worldclawagentic3dopenworld,
+  title         = {WorldClaw: Agentic 3D Open-World Generation at Scale},
+  author        = {Chunchao Guo and Jinpeng Li and Yang Li and Zilong Huang},
+  year          = {2026},
+  eprint        = {2608.05248},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.AI},
+  url           = {https://arxiv.org/abs/2608.05248}
 }`;
