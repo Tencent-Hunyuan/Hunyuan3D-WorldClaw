@@ -2,9 +2,8 @@ export type SeasonId = "spring" | "summer" | "autumn" | "winter";
 export type ChannelId = "rgb" | "instance" | "normal" | "depth";
 export type ViewTrackId = "orbit" | "walk";
 
-/** Single source of truth for the paper and code links across the page. */
+/** Single source of truth for every "arXiv" link on the page. */
 export const paperUrl = "https://arxiv.org/abs/2608.05248";
-export const codeUrl = "https://github.com/Tencent-Hunyuan/Hunyuan3D-WorldClaw";
 
 /**
  * Every case figure is a 1524x1800 composite laid out on the same template.
