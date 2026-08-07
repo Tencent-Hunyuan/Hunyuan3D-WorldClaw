@@ -13,6 +13,11 @@ import { Reveal } from "./Reveal";
 const CLIP = "media/worldclaw-teaser.mp4";
 const POSTER = "media/worldclaw-teaser.webp";
 
+/* Stands in until the metadata arrives, which `preload="none"` defers until
+   playback starts — so this is on screen for most readers and has to match the
+   encoded clip. */
+const CLIP_SECONDS = 71;
+
 /*
  * The clip is the heaviest thing on the page that nobody asked for, and
  * `preload="none"` means play() is what fetches it. Readers who have told the
@@ -110,7 +115,9 @@ export function TeaserVideo() {
         <Reveal className="teaser-rail">
           <span className="section-eyebrow">Overview</span>
           <span className="section-rule" aria-hidden="true" />
-          <span className="teaser-rail-meta">{formatTime(duration || 43)}</span>
+          <span className="teaser-rail-meta">
+            {formatTime(duration || CLIP_SECONDS)}
+          </span>
         </Reveal>
 
         <Reveal className="teaser-layout" delay={0.06}>

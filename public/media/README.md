@@ -2,11 +2,11 @@
 
 ## Overview clip
 
-`worldclaw-teaser.mp4` is the 43-second reel between the hero and the results,
+`worldclaw-teaser.mp4` is the 71-second reel between the hero and the results,
 with `worldclaw-teaser.webp` as its poster — the clip's own first frame, so
 there is no jump when playback starts.
 
-The delivered master was 1080p at 8.4 Mbps, or 45 MB, for a frame that is never
+The delivered master is 1080p at 11 Mbps, or 94 MB, for a frame that is never
 wider than about 800 CSS px. Re-encode a replacement the same way:
 
 ```bash
@@ -15,7 +15,19 @@ ffmpeg -i master.mp4 -c:v libx264 -profile:v high -pix_fmt yuv420p \
   -an -movflags +faststart worldclaw-teaser.mp4
 ```
 
-That lands at about 7.7 MB with no visible loss at display size. The element
+That lands at about 14 MB with no visible loss at display size. Rebuild the
+poster from the encoded clip's first frame, and update `CLIP_SECONDS` in
+`src/components/TeaserVideo.tsx` if the length changed — it is the duration
+shown before the metadata loads:
+
+```bash
+ffmpeg -i worldclaw-teaser.mp4 -frames:v 1 poster.png
+python3 -c "from PIL import Image; \
+  Image.open('poster.png').convert('RGB') \
+  .save('worldclaw-teaser.webp', quality=78, method=6)"
+```
+
+The element
 uses `preload="none"` and only plays once it scrolls into view, so a reader who
 stops at the hero transfers none of it — and it stays on the poster entirely for
 anyone who has asked the browser to save data.
