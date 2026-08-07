@@ -2,15 +2,8 @@ export type SeasonId = "spring" | "summer" | "autumn" | "winter";
 export type ChannelId = "rgb" | "instance" | "normal" | "depth";
 export type ViewTrackId = "orbit" | "walk";
 
-/**
- * Single source of truth for every "arXiv" link on the page.
- *
- * Replace the whole expression with the arXiv abstract URL once the preprint is
- * live, e.g. `export const paperUrl = "https://arxiv.org/abs/2601.00000";`.
- * Until then it serves the PDF bundled in `public/`, which is why it is
- * prefixed with BASE_URL — an absolute arXiv URL must not be.
- */
-export const paperUrl = `${import.meta.env.BASE_URL}WorldClaw.pdf`;
+export const paperUrl = "https://arxiv.org/abs/2608.05248";
+export const codeUrl = "https://github.com/Tencent-Hunyuan/Hunyuan3D-WorldClaw";
 
 /**
  * Every case figure is a 1524x1800 composite laid out on the same template.

@@ -20,7 +20,8 @@ import {
   useEffect,
   useState,
 } from "react";
-import { contributors, paperUrl, seasons } from "../data/content";
+import { codeUrl, contributors, paperUrl, seasons } from "../data/content";
+import { GithubIcon } from "./GithubIcon";
 import { PaperIcon } from "./PaperIcon";
 
 type ThemeStyle = CSSProperties & {
@@ -181,6 +182,18 @@ export function Hero() {
             >
               <PaperIcon />
               ArXiv
+              <span className="button-affordance" aria-hidden="true">
+                <ArrowUpRight weight="bold" />
+              </span>
+            </a>
+            <a
+              className="button button-quiet"
+              href={codeUrl}
+              target="_blank"
+              rel="noreferrer"
+            >
+              <GithubIcon />
+              Code (stay tuned)
               <span className="button-affordance" aria-hidden="true">
                 <ArrowUpRight weight="bold" />
               </span>
