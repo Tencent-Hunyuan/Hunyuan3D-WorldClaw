@@ -16,7 +16,7 @@ const POSTER = "media/worldclaw-teaser.webp";
 /* Stands in until the metadata arrives, which `preload="none"` defers until
    playback starts — so this is on screen for most readers and has to match the
    encoded clip. */
-const CLIP_SECONDS = 71;
+const CLIP_SECONDS = 91;
 
 /*
  * The clip is the heaviest thing on the page that nobody asked for, and

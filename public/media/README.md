@@ -2,23 +2,24 @@
 
 ## Overview clip
 
-`worldclaw-teaser.mp4` is the 71-second reel between the hero and the results,
+`worldclaw-teaser.mp4` is the 91-second reel between the hero and the results,
 with `worldclaw-teaser.webp` as its poster — the clip's own first frame, so
 there is no jump when playback starts.
 
-The delivered master is 1080p at 11 Mbps, or 94 MB, for a frame that is never
-wider than about 800 CSS px. Re-encode a replacement the same way:
+The delivered master is 1080p at 11.8 Mbps, or 128 MB. The clip keeps its full
+1080p so it holds up in the expanded lightbox and on high-density displays,
+where the inline frame's ~800 CSS px is already 1600 device px; the bitrate is
+what comes down instead. Re-encode a replacement the same way:
 
 ```bash
 ffmpeg -i master.mp4 -c:v libx264 -profile:v high -pix_fmt yuv420p \
-  -crf 26 -preset slow -vf 'scale=1280:720:flags=lanczos' \
-  -an -movflags +faststart worldclaw-teaser.mp4
+  -crf 28 -preset slow -an -movflags +faststart worldclaw-teaser.mp4
 ```
 
-That lands at about 14 MB with no visible loss at display size. Rebuild the
-poster from the encoded clip's first frame, and update `CLIP_SECONDS` in
-`src/components/TeaserVideo.tsx` if the length changed — it is the duration
-shown before the metadata loads:
+That lands at about 31 MB, a quarter of the master, with no visible loss at
+display size. Then rebuild the poster from the encoded clip's first frame, and
+update `CLIP_SECONDS` in `src/components/TeaserVideo.tsx` if the length changed
+— it is the duration shown before the metadata loads:
 
 ```bash
 ffmpeg -i worldclaw-teaser.mp4 -frames:v 1 poster.png
@@ -27,10 +28,9 @@ python3 -c "from PIL import Image; \
   .save('worldclaw-teaser.webp', quality=78, method=6)"
 ```
 
-The element
-uses `preload="none"` and only plays once it scrolls into view, so a reader who
-stops at the hero transfers none of it — and it stays on the poster entirely for
-anyone who has asked the browser to save data.
+The element uses `preload="none"` and only plays once it scrolls into view, so a
+reader who stops at the hero transfers none of it — and it stays on the poster
+entirely for anyone who has asked the browser to save data.
 
 # Result clips
 
