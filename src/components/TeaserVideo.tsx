@@ -192,9 +192,10 @@ export function TeaserVideo() {
               object standing in it kept as separate, editable instances.
             </p>
             <p className="teaser-note-hint">
-              Two are shown here: a snowbound village and a tropical island,
-              each flown through in full and then broken out into the four
-              render channels behind it.
+              Four worlds — a snowline village, a canyon settlement, a tropical
+              island, and an arctic outpost — show the range one pipeline
+              covers. The object library each draws on, and the instance pass
+              behind it, show that every mesh stays separate and editable.
             </p>
           </div>
         </Reveal>
