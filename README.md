@@ -1,4 +1,4 @@
-# WorldClaw: Agentic 3D open-world generation at scale
+# WorldClaw: Agentic 3D Open-world Generation at Scale
 
 <p align="center">
   <a href="https://arxiv.org/abs/2608.05248" target="_blank">
