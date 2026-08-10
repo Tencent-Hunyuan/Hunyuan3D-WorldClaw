@@ -572,12 +572,9 @@ export function sceneViewSequence(scene: Scene): ViewShot[] {
   return viewTracks.flatMap((track) => sceneViews(scene, track));
 }
 
-export const bibtex = `@misc{guo2026worldclawagentic3dopenworld,
-  title         = {WorldClaw: Agentic 3D Open-World Generation at Scale},
-  author        = {Chunchao Guo and Jinpeng Li and Yang Li and Zilong Huang},
-  year          = {2026},
-  eprint        = {2608.05248},
-  archivePrefix = {arXiv},
-  primaryClass  = {cs.AI},
-  url           = {https://arxiv.org/abs/2608.05248}
+export const bibtex = `@article{guo2026worldclaw,
+  title={WorldClaw: Agentic 3D Open-World Generation at Scale},
+  author={Guo, Chunchao and Li, Jinpeng and Li, Yang and Huang, Zilong},
+  journal={arXiv preprint arXiv:2608.05248},
+  year={2026}
 }`;

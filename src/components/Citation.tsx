@@ -87,7 +87,7 @@ export function Citation() {
               </div>
               <div>
                 <dt>Entry type</dt>
-                <dd>misc</dd>
+                <dd>article</dd>
               </div>
             </dl>
           </Reveal>
