@@ -17,7 +17,7 @@
 </p>
 
 ## 📰 News
-- 2026.08.07: [Paper](https://arxiv.org/abs/2608.05248) and [project page](https://tencent-hunyuan.github.io/Hunyuan3D-WorldClaw/) are released.
+- 2026.08.07: [Paper](https://arxiv.org/abs/2608.05248) and [project page](https://tencent-hunyuan.github.io/Hunyuan3D-WorldClaw/) are released!
 
 ## 📖 Method
 
