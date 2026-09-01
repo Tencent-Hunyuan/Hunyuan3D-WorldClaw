@@ -31,7 +31,12 @@ from .layout import (
     target_world_size_from_environment,
 )
 from .models import AssetTypeClassifier, CommandWorker, ModelLock, OpenAIJSONClient, Planner, VLLMClient
-from .placement_constraints import apply_hard_gate, prepare_surface_masks, requirements_from_spec
+from .placement_constraints import (
+    apply_hard_gate,
+    footprint_satisfies_requirements,
+    prepare_surface_masks,
+    requirements_from_spec,
+)
 from .schemas import AssetInstance, RunManifest, ScenePlan, Stage
 from .state import StateDB
 from .structural import (
@@ -565,7 +570,21 @@ class Pipeline:
                                 delta = (chunk[:, None, :] - points[None, :, :]) * spacing
                                 distances[chunk[:, 0], chunk[:, 1]] = np.sqrt(np.sum(delta * delta, axis=2)).min(axis=1)
                             probabilities *= np.exp(-distances / max(falloff, 1e-3))
-                    candidates = [item for item in np.argwhere(gate).tolist() if probabilities[item[0], item[1]] > 1e-6]
+                    sx = 2.0 if spec.category in ("house", "cabin", "building") else 1.0
+                    sy = sx
+                    candidate_cells = []
+                    for item in np.argwhere(gate).tolist():
+                        if probabilities[item[0], item[1]] <= 1e-6:
+                            continue
+                        iy, ix = item
+                        x = -width / 2 + ix * width / (labels.shape[1] - 1)
+                        y = -depth / 2 + iy * depth / (labels.shape[0] - 1)
+                        footprint = (x - sx / 2, y - sy / 2, x + sx / 2, y + sy / 2)
+                        if footprint_satisfies_requirements(
+                            footprint, requirements, surface_masks, (width, depth)
+                        ):
+                            candidate_cells.append(item)
+                    candidates = candidate_cells
                     candidates.sort(key=lambda item: -math.log(max(rng.random(), 1e-12)) / max(float(probabilities[item[0], item[1]]), 1e-6))
                     cursor = 0
                     for index in range(spec.count):
@@ -576,7 +595,6 @@ class Pipeline:
                         x = -width / 2 + ix * width / (labels.shape[1] - 1)
                         y = -depth / 2 + iy * depth / (labels.shape[0] - 1)
                         z = float(height[iy, ix])
-                        sx = 2.0 if spec.category in ("house", "cabin", "building") else 1.0
                         sy = sx
                         sz = 4.0 if spec.category in ("tree", "palm") else (5.0 if spec.category == "castle" else 2.0)
                         asset_id = f"{region.id}_{spec.category}_{index:03d}"

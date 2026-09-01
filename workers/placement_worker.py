@@ -19,7 +19,7 @@ from worldclaw_oss.asset_types import AssetType
 from worldclaw_oss.geometry import cropped_intrinsics, gltf_vertices_to_z_up, pixel_ray, projected_bbox_scale
 from worldclaw_oss.placement_constraints import (
     apply_hard_gate,
-    footprint_intersects_mask,
+    footprint_satisfies_requirements,
     prepare_surface_masks,
     requirements_from_spec,
 )
@@ -461,18 +461,9 @@ def scatter_environment(
                     float(bounds[:, 0].min()), float(bounds[:, 1].min()),
                     float(bounds[:, 0].max()), float(bounds[:, 1].max()),
                 )
-                forbidden = set(requirements.forbidden_support_surfaces)
-                if requirements.requires_dry_support:
-                    forbidden.add("water")
-                if requirements.avoid_structural_exclusion:
-                    forbidden.add("structural_exclusion")
-                if any(
-                    name in surface_masks and footprint_intersects_mask(footprint, surface_masks[name], world_size)
-                    for name in forbidden
+                if not footprint_satisfies_requirements(
+                    footprint, requirements, surface_masks, world_size
                 ):
-                    continue
-                required = [surface_masks[name] for name in requirements.required_support_surfaces if name in surface_masks]
-                if required and not any(footprint_intersects_mask(footprint, mask, world_size) for mask in required):
                     continue
                 # Overlap tolerance is a placement requirement.  Density is a
                 # generic distribution modifier and remains only the fallback
