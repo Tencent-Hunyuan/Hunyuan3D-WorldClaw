@@ -340,7 +340,7 @@ def scatter_environment(
         raise ValueError("structural placement influence shape does not match layout")
     if trail_exclusion_mask is None:
         trail_exclusion_mask = np.zeros_like(labels, dtype=bool)
-    surface_masks = prepare_surface_masks(dict(surface_masks or {}))
+    surface_masks = prepare_surface_masks(dict(surface_masks or {}), labels.shape)
     surface_masks.setdefault("trail", np.asarray(trail_exclusion_mask, dtype=bool))
     if exclusion_mask is not None:
         surface_masks.setdefault("structural_exclusion", np.asarray(exclusion_mask, dtype=bool))

@@ -56,6 +56,12 @@ def test_named_floor_alias_uses_generic_dry_terrain_without_asset_logic():
     assert not gate[2, 2]
 
 
+def test_dry_terrain_has_a_shape_based_fallback_when_no_masks_exist():
+    masks = prepare_surface_masks({}, (3, 4))
+    assert masks["dry_terrain"].shape == (3, 4)
+    assert masks["dry_terrain"].all()
+
+
 def test_footprint_gate_is_area_aware():
     mask = np.zeros((10, 10), dtype=bool)
     mask[5, 5] = True

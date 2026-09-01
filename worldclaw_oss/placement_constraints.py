@@ -31,7 +31,10 @@ def canonical_surface_name(value: object) -> str:
     return _SURFACE_ALIASES.get(key, key)
 
 
-def prepare_surface_masks(surface_masks: Mapping[str, np.ndarray | None]) -> dict[str, np.ndarray]:
+def prepare_surface_masks(
+    surface_masks: Mapping[str, np.ndarray | None],
+    shape: tuple[int, int] | None = None,
+) -> dict[str, np.ndarray]:
     """Normalize masks and derive generic dry support from available geometry."""
     masks: dict[str, np.ndarray] = {}
     for name, value in surface_masks.items():
@@ -39,6 +42,8 @@ def prepare_surface_masks(surface_masks: Mapping[str, np.ndarray | None]) -> dic
             continue
         masks[canonical_surface_name(name)] = np.asarray(value, dtype=bool)
     if not masks:
+        if shape is not None:
+            masks["dry_terrain"] = np.ones(shape, dtype=bool)
         return masks
     shapes = {mask.shape for mask in masks.values()}
     if len(shapes) != 1:
@@ -114,7 +119,7 @@ def apply_hard_gate(
 ) -> np.ndarray:
     """Apply generic support/structure compatibility to candidate cells."""
     gate = np.asarray(base_gate, dtype=bool).copy()
-    surface_masks = prepare_surface_masks(surface_masks)
+    surface_masks = prepare_surface_masks(surface_masks, gate.shape)
 
     def mask_for(name: str) -> np.ndarray | None:
         value = surface_masks.get(canonical_surface_name(name))

@@ -531,7 +531,7 @@ class Pipeline:
                 "structural_exclusion": exclusion,
                 "trail": trail_exclusion,
                 "water": water_surface,
-            })
+            }, labels.shape)
             rng = random.Random(stable_seed(self.prompt, self.seed))
             records, meshes = [], []
             width, depth = plan_value.world_size_m
