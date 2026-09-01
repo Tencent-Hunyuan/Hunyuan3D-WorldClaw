@@ -1124,10 +1124,17 @@ class Pipeline:
             )
             script = Path(__file__).resolve().parents[1] / "scripts" / "blender_finalize.py"
             profile = self._render_profile()
-            subprocess.run(
-                [blender, "--background", "--python", str(script), "--", "--run", str(self.run_dir), "--profile", profile],
-                check=True, timeout=14400,
-            )
+            # Detached live runs may outlive the terminal that started them.
+            # Keep Blender's diagnostics in the run directory instead of
+            # inheriting a closed stdout pipe, which makes Blender terminate
+            # with SIGPIPE while emitting progress output.
+            finalize_log = self.run_dir / "blender_finalize.log"
+            with finalize_log.open("ab") as log:
+                subprocess.run(
+                    [blender, "--background", "--python", str(script), "--", "--run", str(self.run_dir), "--profile", profile],
+                    stdout=log, stderr=subprocess.STDOUT,
+                    check=True, timeout=14400,
+                )
             return response | {"render_profile": profile}
 
         def structural_view_plan():
