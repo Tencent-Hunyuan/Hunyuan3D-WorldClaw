@@ -1,0 +1,11 @@
+name: worldclaw-hunyuan3d
+channels: [pytorch, nvidia, conda-forge]
+dependencies:
+  - python=3.10
+  - pip
+  - pip:
+      - torch
+      - torchvision
+      - trimesh
+      - open3d
+      - huggingface-hub

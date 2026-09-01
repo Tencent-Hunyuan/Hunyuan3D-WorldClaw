@@ -37,3 +37,14 @@
   year={2026}
 }
 ```
+
+## OSS Replacement (Separate Implementation)
+
+This repository also contains a clearly separated, auditable open-model
+replacement workflow under `worldclaw_oss/`. It is an independent procedural
+and worker-based implementation inspired by the paper's public description;
+it is not Tencent's official WorldClaw implementation and makes no claim of
+matching the paper's visual quality or internal code.
+
+See [OSS_REPLACEMENT.md](OSS_REPLACEMENT.md) for installation, CLI usage,
+architecture, reproducibility boundaries, and the test command.

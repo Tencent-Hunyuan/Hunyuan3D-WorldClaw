@@ -1,0 +1,13 @@
+name: worldclaw-image-seg
+channels: [pytorch, nvidia, conda-forge]
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - torch
+      - torchvision
+      - diffusers
+      - transformers
+      - accelerate
+      - groundingdino-py
+      - sam2

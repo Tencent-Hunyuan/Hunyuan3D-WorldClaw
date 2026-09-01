@@ -1,0 +1,23 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "worldclaw-oss"
+version = "0.1.0"
+description = "Auditable open-model replacement workflow for WorldClaw (not official WorldClaw)"
+requires-python = ">=3.10"
+dependencies = ["numpy>=1.26", "pydantic>=2.7"]
+
+[project.optional-dependencies]
+test = ["pytest>=8"]
+live = ["httpx>=0.27"]
+
+[project.scripts]
+worldclaw-oss = "worldclaw_oss.cli:main"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.setuptools.packages.find]
+include = ["worldclaw_oss*"]
