@@ -138,6 +138,18 @@ def scene_plan_api_schema() -> dict[str, Any]:
             },
             "density": {"type": "string", "enum": ["sparse", "medium", "dense"]},
             "appearance": {"type": "string"},
+            "placement_profile": {
+                "type": "object", "additionalProperties": False,
+                "properties": {
+                    "requires_dry_support": {"type": "boolean"},
+                    "avoid_structural_exclusion": {"type": "boolean"},
+                    "required_support_surfaces": {"type": "array", "items": {"type": "string"}},
+                    "forbidden_support_surfaces": {"type": "array", "items": {"type": "string"}},
+                    "allowed_support_surfaces": {"type": "array", "items": {"type": "string"}},
+                    "distance_preferences": {"type": "object", "additionalProperties": {"type": "number"}},
+                    "footprint_overlap_threshold": {"type": "number", "minimum": 0.0, "maximum": 1.1},
+                },
+            },
         },
         "required": [
             "category", "count", "asset_role", "instance_strategy",

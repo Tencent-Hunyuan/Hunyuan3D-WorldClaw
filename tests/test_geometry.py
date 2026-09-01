@@ -38,3 +38,4 @@ def test_contact_ratio():
     vertices = np.array([[-1, -1, 0], [1, -1, 0.01], [1, 1, 1], [-1, 1, 1]])
     ratio = bottom_contact_ratio(vertices, lambda x, y: 0.0, tolerance=0.02)
     assert ratio == 1.0
+

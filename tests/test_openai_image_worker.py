@@ -54,3 +54,4 @@ def test_reference_worker_forces_gpt_image_2(monkeypatch, tmp_path):
     assert response["model"] == "gpt-image-2"
     assert response["images"][0]["model"] == "gpt-image-2"
     assert Path(response["images"][0]["path"]).read_bytes() == b"PNG"
+

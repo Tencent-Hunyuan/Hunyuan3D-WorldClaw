@@ -17,6 +17,11 @@ from workers.common import load_validated_stage_response, read_request, seed_eve
 from worldclaw_oss.asset_semantics import effective_asset_type, is_structural_feature, semantic_scale_range
 from worldclaw_oss.asset_types import AssetType
 from worldclaw_oss.geometry import cropped_intrinsics, gltf_vertices_to_z_up, pixel_ray, projected_bbox_scale
+from worldclaw_oss.placement_constraints import (
+    apply_hard_gate,
+    footprint_intersects_mask,
+    requirements_from_spec,
+)
 from worldclaw_oss.schemas import AssetInstance
 
 
@@ -220,16 +225,6 @@ def _distance_to_mask(mask: np.ndarray, world_size: tuple[float, float]) -> np.n
     return out
 
 
-def _semantic_indices(plan: dict) -> dict[str, set[int]]:
-    result = {"lake": set(), "shore": set(), "forest": set()}
-    for index, region in enumerate(plan.get("regions", [])):
-        text = f"{region.get('id', '')} {region.get('function', '')}".lower()
-        for key in result:
-            if key in text:
-                result[key].add(index)
-    return result
-
-
 def structure_mesh(region: dict, category: str, count_index: int, world_size: tuple[float, float], sample_height, output_path: Path):
     """Build a terrain-conforming strip for trails, roads, rivers, or streams."""
     import trimesh
@@ -324,6 +319,7 @@ def scatter_environment(
     layout_weights: np.ndarray | None = None,
     structural_placement_weights: np.ndarray | None = None,
     trail_exclusion_mask: np.ndarray | None = None,
+    surface_masks: dict[str, np.ndarray] | None = None,
 ) -> tuple[list[dict], list[dict]]:
     rng = random.Random(seed)
     world_size = tuple(plan["world_size_m"])
@@ -343,13 +339,15 @@ def scatter_environment(
         raise ValueError("structural placement influence shape does not match layout")
     if trail_exclusion_mask is None:
         trail_exclusion_mask = np.zeros_like(labels, dtype=bool)
-    semantic = _semantic_indices(plan)
-    lake_mask = np.isin(labels, list(semantic["lake"])) if semantic["lake"] else np.zeros_like(labels, dtype=bool)
-    distance_to_lake = _distance_to_mask(lake_mask, world_size) if semantic["lake"] else np.full_like(height, np.inf, dtype=np.float32)
-    lake_span = max(width, depth)
-    if semantic["lake"]:
-        lake_points = np.argwhere(lake_mask)
-        lake_span = max(float(np.ptp(lake_points[:, 0])) * depth / max(labels.shape[0] - 1, 1), float(np.ptp(lake_points[:, 1])) * width / max(labels.shape[1] - 1, 1), 1e-3)
+    surface_masks = dict(surface_masks or {})
+    surface_masks.setdefault("trail", np.asarray(trail_exclusion_mask, dtype=bool))
+    if exclusion_mask is not None:
+        surface_masks.setdefault("structural_exclusion", np.asarray(exclusion_mask, dtype=bool))
+    distance_fields = {
+        name: _distance_to_mask(np.asarray(mask, dtype=bool), world_size)
+        for name, mask in surface_masks.items()
+        if np.asarray(mask).shape == labels.shape and np.any(mask)
+    }
     prototype_by_key = {(item.get("region_id"), item["category"]): item for item in prototypes}
     prototype_by_category = {item["category"]: item for item in prototypes}
     prototype_by_type = {(item.get("region_id"), item.get("asset_type")): item for item in prototypes}
@@ -358,7 +356,7 @@ def scatter_environment(
     prototype_mesh_cache = {}
     prototype_support_cache = {}
     for region_index, region in enumerate(plan["regions"]):
-        allowed = ~exclusion_mask if exclusion_mask is not None else np.ones_like(labels, dtype=bool)
+        allowed = np.ones_like(labels, dtype=bool)
         region_weight = np.clip(layout_weights[region_index], 0.0, 1.0)
         base_allowed = (slope <= 32.0) & allowed & (region_weight >= 0.05)
         cursor = 0
@@ -369,8 +367,7 @@ def scatter_environment(
             region.get("objects", []),
             key=lambda value: (
                 1
-                if value.get("category", "").strip().lower() == "tree"
-                and str(value.get("density", "")).strip().lower() == "dense"
+                if str(value.get("density", "")).strip().lower() == "dense"
                 else 0
             ),
         )
@@ -426,25 +423,19 @@ def scatter_environment(
                 prototype_support_cache[prototype_path] = support_template
             low, high = semantic_scale_range(spec["category"])
             category = str(spec["category"]).strip().lower()
-            gate = base_allowed.copy()
-            if category in {"reed", "reeds"}:
-                if semantic["shore"]:
-                    gate &= np.max(layout_weights[list(semantic["shore"])], axis=0) >= 0.15
-                if semantic["lake"]:
-                    gate &= np.max(layout_weights[list(semantic["lake"])], axis=0) < 0.8
-                if semantic["forest"]:
-                    gate &= np.max(layout_weights[list(semantic["forest"])], axis=0) < 0.8
-            if category in {"tree", "trees", "palm", "palms"}:
-                gate &= ~np.asarray(trail_exclusion_mask, dtype=bool)
+            requirements = requirements_from_spec(spec)
+            gate = apply_hard_gate(base_allowed, requirements, surface_masks)
             candidates = np.argwhere(gate).tolist()
             sampling_weight = region_weight * structural_placement_weights
-            if category in {"reed", "reeds"} and np.isfinite(distance_to_lake).any():
-                sampling_weight = sampling_weight * np.exp(-distance_to_lake / max(lake_span * 0.15, 1e-3))
+            for surface_name, falloff in requirements.distance_preferences:
+                distance = distance_fields.get(surface_name)
+                if distance is not None:
+                    sampling_weight *= np.exp(-distance / max(falloff, 1e-3))
             candidates = [item for item in candidates if sampling_weight[item[0], item[1]] > 1e-6]
-            if not candidates and category not in {"reed", "reeds"}:
+            if not candidates:
                 # Preserve a deterministic nearest-feasible fallback for
                 # degenerate planner regions while retaining soft weighting.
-                candidates = np.argwhere((slope <= 32.0) & allowed).tolist()
+                candidates = np.argwhere(gate).tolist()
                 candidates.sort(key=lambda item: -float(sampling_weight[item[0], item[1]]))
             candidates.sort(key=lambda item: -math.log(max(rng.random(), 1e-12)) / max(float(sampling_weight[item[0], item[1]]), 1e-6))
             placed = 0
@@ -469,28 +460,25 @@ def scatter_environment(
                     float(bounds[:, 0].min()), float(bounds[:, 1].min()),
                     float(bounds[:, 0].max()), float(bounds[:, 1].max()),
                 )
-                if category in {"tree", "trees", "palm", "palms"} and np.any(trail_exclusion_mask):
-                    col0 = int(np.clip(math.floor((footprint[0] + width / 2) / width * (labels.shape[1] - 1)), 0, labels.shape[1] - 1))
-                    col1 = int(np.clip(math.ceil((footprint[2] + width / 2) / width * (labels.shape[1] - 1)), 0, labels.shape[1] - 1))
-                    row0 = int(np.clip(math.floor((footprint[1] + depth / 2) / depth * (labels.shape[0] - 1)), 0, labels.shape[0] - 1))
-                    row1 = int(np.clip(math.ceil((footprint[3] + depth / 2) / depth * (labels.shape[0] - 1)), 0, labels.shape[0] - 1))
-                    if np.any(trail_exclusion_mask[row0:row1 + 1, col0:col1 + 1]):
-                        continue
-                # Dense vegetation is a population of reusable tree
-                # prototypes, not a set of isolated solids. Canopy footprints
-                # may overlap at high density; retain strict exclusion for
-                # cabins, rocks, and all non-dense categories.
-                if asset_type == AssetType.PROCEDURAL_NATIVE:
-                    # Small native vegetation is intentionally clustered;
-                    # its footprint is not an exclusion volume.
-                    overlap_threshold = 1.1
-                elif (
-                    spec["category"].strip().lower() == "tree"
-                    and str(spec.get("density", "")).strip().lower() == "dense"
+                forbidden = set(requirements.forbidden_support_surfaces)
+                if requirements.requires_dry_support:
+                    forbidden.add("water")
+                if requirements.avoid_structural_exclusion:
+                    forbidden.add("structural_exclusion")
+                if any(
+                    name in surface_masks and footprint_intersects_mask(footprint, surface_masks[name], world_size)
+                    for name in forbidden
                 ):
-                    overlap_threshold = 0.65
-                else:
-                    overlap_threshold = 0.05
+                    continue
+                required = [surface_masks[name] for name in requirements.required_support_surfaces if name in surface_masks]
+                if required and not any(footprint_intersects_mask(footprint, mask, world_size) for mask in required):
+                    continue
+                # Overlap tolerance is a placement requirement.  Density is a
+                # generic distribution modifier and remains only the fallback
+                # for archived plans that predate placement_profile.
+                overlap_threshold = requirements.footprint_overlap_threshold
+                if overlap_threshold is None:
+                    overlap_threshold = 0.65 if str(spec.get("density", "")).strip().lower() == "dense" else 0.05
                 if overlaps(footprint, occupied, threshold=overlap_threshold):
                     continue
                 object_height = max(float(np.ptp(world_vertices[:, 2])), 0.1)
@@ -745,8 +733,10 @@ def main():
     layout_weights = np.load(weights_path) if weights_path.exists() else None
     influence_path = work_dir / "structural" / "structural_placement_weights.npy"
     trail_path = work_dir / "structural" / "trail_exclusion_mask.npy"
+    water_path = work_dir / "structural" / "water_surface_mask.npy"
     structural_placement_weights = np.load(influence_path) if influence_path.exists() else None
     trail_exclusion_mask = np.load(trail_path) if trail_path.exists() else None
+    water_surface_mask = np.load(water_path) if water_path.exists() else None
     assets, diagnostics = scatter_environment(
         environment.get("assets", []), plan, labels, height, sample_height,
         int(request["seed"]), float(request.get("contact_tolerance_fraction", 0.05)), output_root,
@@ -754,6 +744,11 @@ def main():
         layout_weights=layout_weights,
         structural_placement_weights=structural_placement_weights,
         trail_exclusion_mask=trail_exclusion_mask,
+        surface_masks={
+            "structural_exclusion": exclusion_mask,
+            "trail": trail_exclusion_mask,
+            "water": water_surface_mask,
+        },
     )
     reconstruction_assets = reconstruction.get("assets", [])
     tolerance_fraction = float(request.get("contact_tolerance_fraction", 0.05))

@@ -31,6 +31,7 @@ from .layout import (
     target_world_size_from_environment,
 )
 from .models import AssetTypeClassifier, CommandWorker, ModelLock, OpenAIJSONClient, Planner, VLLMClient
+from .placement_constraints import apply_hard_gate, requirements_from_spec
 from .schemas import AssetInstance, RunManifest, ScenePlan, Stage
 from .state import StateDB
 from .structural import (
@@ -495,7 +496,7 @@ class Pipeline:
             vertices[:, 2] = modified.reshape(-1)
             np.savez_compressed(self.work / "terrain_structural.npz", height=modified, vertices=vertices, triangles=source["triangles"])
             branch = json.loads((structural_dir / "structural_branch.json").read_text(encoding="utf-8"))
-            _json(self.work / "structural_branch.json", branch | {"status": "ok", "integration": "world_coordinates", "exclusion_mask": str(structural_dir / "structural_exclusion_mask.npy"), "occupied_mask": str(structural_dir / "structural_occupied_mask.npy"), "surface_type_mask": str(structural_dir / "surface_type_mask.npy"), "trail_clearance_field": str(structural_dir / "trail_clearance_field.npy"), "trail_exclusion_mask": str(structural_dir / "trail_exclusion_mask.npy"), "structural_placement_weights": str(structural_dir / "structural_placement_weights.npy"), "placement_constraints": {"avoid_exclusion": True, "modified_terrain_required": True, "base_layout_weights_immutable": True}, "terrain": str(self.work / "terrain_structural.npz")})
+            _json(self.work / "structural_branch.json", branch | {"status": "ok", "integration": "world_coordinates", "exclusion_mask": str(structural_dir / "structural_exclusion_mask.npy"), "occupied_mask": str(structural_dir / "structural_occupied_mask.npy"), "surface_type_mask": str(structural_dir / "surface_type_mask.npy"), "water_surface_mask": str(structural_dir / "water_surface_mask.npy"), "trail_clearance_field": str(structural_dir / "trail_clearance_field.npy"), "trail_exclusion_mask": str(structural_dir / "trail_exclusion_mask.npy"), "structural_placement_weights": str(structural_dir / "structural_placement_weights.npy"), "placement_constraints": {"avoid_exclusion": True, "modified_terrain_required": True, "base_layout_weights_immutable": True}, "terrain": str(self.work / "terrain_structural.npz")})
             return {"terrain_modified": bool(branch.get("terrain_modified")), "structural_meshes": len(branch.get("structural_meshes", [])), "terrain_modification_seconds": round(time.monotonic() - started, 3)}
 
         def structural_validate():
@@ -524,28 +525,13 @@ class Pipeline:
             exclusion = np.load(self.work / "structural" / "structural_exclusion_mask.npy") if (self.work / "structural" / "structural_exclusion_mask.npy").exists() else np.zeros_like(height, dtype=bool)
             influence = np.load(self.work / "structural" / "structural_placement_weights.npy") if (self.work / "structural" / "structural_placement_weights.npy").exists() else np.ones_like(height, dtype=np.float32)
             trail_exclusion = np.load(self.work / "structural" / "trail_exclusion_mask.npy") if (self.work / "structural" / "trail_exclusion_mask.npy").exists() else np.zeros_like(labels, dtype=bool)
-            semantic = {
-                key: {index for index, region in enumerate(plan_value.regions)
-                      if key in f"{region.id} {region.function}".lower()}
-                for key in ("lake", "shore", "forest")
+            water_path = self.work / "structural" / "water_surface_mask.npy"
+            water_surface = np.load(water_path) if water_path.exists() else None
+            surface_masks = {
+                "structural_exclusion": exclusion,
+                "trail": trail_exclusion,
+                "water": water_surface,
             }
-            lake_mask = np.isin(labels, list(semantic["lake"])) if semantic["lake"] else np.zeros_like(labels, dtype=bool)
-            lake_points = np.argwhere(lake_mask)
-            if len(lake_points):
-                padded = np.pad(lake_mask, 1, mode="constant", constant_values=False)
-                interior = (padded[1:-1, 1:-1] & padded[:-2, 1:-1] & padded[2:, 1:-1] & padded[1:-1, :-2] & padded[1:-1, 2:])
-                boundary_points = np.argwhere(lake_mask & ~interior)
-                if len(boundary_points):
-                    lake_points = boundary_points
-            distance_to_lake = np.full_like(height, np.inf, dtype=np.float32)
-            if len(lake_points):
-                grid = np.argwhere(np.ones_like(labels, dtype=bool))
-                spacing = np.asarray([plan_value.world_size_m[1] / max(labels.shape[0] - 1, 1), plan_value.world_size_m[0] / max(labels.shape[1] - 1, 1)])
-                for start in range(0, len(grid), 4096):
-                    chunk = grid[start:start + 4096]
-                    delta = (chunk[:, None, :] - lake_points[None, :, :]) * spacing
-                    distance_to_lake[chunk[:, 0], chunk[:, 1]] = np.sqrt(np.sum(delta * delta, axis=2)).min(axis=1)
-            lake_span = max(plan_value.world_size_m) if not len(lake_points) else max(float(np.ptp(lake_points[:, 0])), float(np.ptp(lake_points[:, 1]))) * min(plan_value.world_size_m) / max(labels.shape)
             rng = random.Random(stable_seed(self.prompt, self.seed))
             records, meshes = [], []
             width, depth = plan_value.world_size_m
@@ -555,25 +541,34 @@ class Pipeline:
                     if is_structural_feature(spec.category, spec.asset_role):
                         continue
                     category = spec.category.lower()
-                    gate = (layout_weights[region_index] >= 0.05) & (~exclusion)
-                    if category in {"reed", "reeds"}:
-                        if semantic["shore"]:
-                            gate &= np.max(layout_weights[list(semantic["shore"])], axis=0) >= 0.15
-                        if semantic["lake"]:
-                            gate &= np.max(layout_weights[list(semantic["lake"])], axis=0) < 0.8
-                        if semantic["forest"]:
-                            gate &= np.max(layout_weights[list(semantic["forest"])], axis=0) < 0.8
-                    if category in {"tree", "trees", "palm", "palms"}:
-                        gate &= ~trail_exclusion
+                    requirements = requirements_from_spec(spec.model_dump(mode="json"))
+                    gate = apply_hard_gate(
+                        layout_weights[region_index] >= 0.05,
+                        requirements,
+                        surface_masks,
+                    )
                     probabilities = np.clip(layout_weights[region_index] * influence, 0.0, None)
-                    if category in {"reed", "reeds"}:
-                        probabilities *= np.exp(-distance_to_lake / max(lake_span * 0.15, 1e-3))
+                    # Distance preferences are optional environmental factors;
+                    # hard eligibility remains independent of probability.
+                    for surface_name, falloff in requirements.distance_preferences:
+                        mask = surface_masks.get(surface_name)
+                        if mask is not None and np.any(mask):
+                            points = np.argwhere(mask)
+                            spacing = np.asarray([
+                                plan_value.world_size_m[1] / max(labels.shape[0] - 1, 1),
+                                plan_value.world_size_m[0] / max(labels.shape[1] - 1, 1),
+                            ])
+                            grid = np.argwhere(np.ones_like(labels, dtype=bool))
+                            distances = np.empty(labels.shape, dtype=np.float32)
+                            for start in range(0, len(grid), 4096):
+                                chunk = grid[start:start + 4096]
+                                delta = (chunk[:, None, :] - points[None, :, :]) * spacing
+                                distances[chunk[:, 0], chunk[:, 1]] = np.sqrt(np.sum(delta * delta, axis=2)).min(axis=1)
+                            probabilities *= np.exp(-distances / max(falloff, 1e-3))
                     candidates = [item for item in np.argwhere(gate).tolist() if probabilities[item[0], item[1]] > 1e-6]
                     candidates.sort(key=lambda item: -math.log(max(rng.random(), 1e-12)) / max(float(probabilities[item[0], item[1]]), 1e-6))
                     cursor = 0
                     for index in range(spec.count):
-                        while cursor < len(candidates) and exclusion[candidates[cursor][0], candidates[cursor][1]]:
-                            cursor += 1
                         if cursor >= len(candidates):
                             break
                         iy, ix = candidates[cursor]
@@ -907,7 +902,7 @@ class Pipeline:
             vertices[:, 2] = modified.reshape(-1)
             np.savez_compressed(self.work / "terrain_structural.npz", height=modified, vertices=vertices, triangles=source["triangles"])
             branch = json.loads((structural_dir / "structural_branch.json").read_text(encoding="utf-8"))
-            _json(self.work / "structural_branch.json", branch | {"status": "ok", "integration": "world_coordinates", "exclusion_mask": str(structural_dir / "structural_exclusion_mask.npy"), "occupied_mask": str(structural_dir / "structural_occupied_mask.npy"), "surface_type_mask": str(structural_dir / "surface_type_mask.npy"), "trail_clearance_field": str(structural_dir / "trail_clearance_field.npy"), "trail_exclusion_mask": str(structural_dir / "trail_exclusion_mask.npy"), "structural_placement_weights": str(structural_dir / "structural_placement_weights.npy"), "placement_constraints": {"avoid_exclusion": True, "modified_terrain_required": True, "base_layout_weights_immutable": True}, "terrain": str(self.work / "terrain_structural.npz")})
+            _json(self.work / "structural_branch.json", branch | {"status": "ok", "integration": "world_coordinates", "exclusion_mask": str(structural_dir / "structural_exclusion_mask.npy"), "occupied_mask": str(structural_dir / "structural_occupied_mask.npy"), "surface_type_mask": str(structural_dir / "surface_type_mask.npy"), "water_surface_mask": str(structural_dir / "water_surface_mask.npy"), "trail_clearance_field": str(structural_dir / "trail_clearance_field.npy"), "trail_exclusion_mask": str(structural_dir / "trail_exclusion_mask.npy"), "structural_placement_weights": str(structural_dir / "structural_placement_weights.npy"), "placement_constraints": {"avoid_exclusion": True, "modified_terrain_required": True, "base_layout_weights_immutable": True}, "terrain": str(self.work / "terrain_structural.npz")})
             return {"terrain_modified": bool(branch.get("terrain_modified")), "structural_meshes": len(branch.get("structural_meshes", [])), "terrain_modification_seconds": round(time.monotonic() - started, 3)}
 
         def structural_validate():

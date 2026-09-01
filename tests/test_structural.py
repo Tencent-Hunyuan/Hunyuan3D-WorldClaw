@@ -45,6 +45,9 @@ def test_structural_geometry_integrates_terrain_and_masks(tmp_path):
     assert np.any(modified < height)
     exclusion = np.load(tmp_path / "structural" / "structural_exclusion_mask.npy")
     assert exclusion.any()
+    water = np.load(tmp_path / "structural" / "water_surface_mask.npy")
+    assert water.dtype == np.bool_
+    assert water.any()
     assert len(result["structural_meshes"]) == 2
     assert validate_structural_branch(result, modified)["status"] == "pass"
     json.loads((tmp_path / "structural" / "structural_branch.json").read_text())

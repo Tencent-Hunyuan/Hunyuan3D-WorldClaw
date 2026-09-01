@@ -9,3 +9,4 @@ dependencies:
       - trimesh
       - open3d
       - huggingface-hub
+

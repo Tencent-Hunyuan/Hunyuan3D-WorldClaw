@@ -38,6 +38,11 @@ generation concerns:
   density for indivisible objects or region features such as a cabin, rock,
   trail, or lake unless the user explicitly asks for a density modifier.
 - appearance is optional and should contain only useful visual descriptors.
+- placement_profile is an optional, data-driven compatibility contract. Use
+  requires_dry_support=true for assets that cannot be submerged, set it false
+  only when the asset can physically contact water, and use named support
+  surfaces or distance_preferences for reusable environmental constraints.
+  Do not encode these requirements in category names.
 
 Quantity rules when the prompt does not provide an explicit number:
 - Preserve every explicit numeric quantity exactly.

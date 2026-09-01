@@ -39,3 +39,4 @@ def test_three_fixed_prompts_have_distinct_plans(tmp_path):
         run = run_synthetic(tmp_path / name, prompt)
         themes.append(json.loads((run / "scene.json").read_text(encoding="utf-8"))["plan"]["theme"])
     assert len(set(themes)) == 3
+

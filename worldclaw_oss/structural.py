@@ -455,6 +455,7 @@ def build_structural_geometry(
     exclusion = np.zeros_like(height, dtype=bool)
     occupied = np.zeros_like(height, dtype=bool)
     surface = np.zeros_like(height, dtype=np.int16)
+    water_surface = np.zeros_like(height, dtype=bool)
     # Trail influence is separate from base layout semantics.  A value of 0
     # is a hard tree-free zone; it rises continuously to 1 in the soft zone.
     trail_clearance = np.ones_like(height, dtype=np.float32)
@@ -511,6 +512,8 @@ def build_structural_geometry(
                 exclusion[max(0, row - radius_y):row + radius_y + 1, max(0, col - radius_x):col + radius_x + 1] = True
                 occupied[max(0, row - radius_y):row + radius_y + 1, max(0, col - radius_x):col + radius_x + 1] = True
                 surface[max(0, row - radius_y):row + radius_y + 1, max(0, col - radius_x):col + radius_x + 1] = 2 if surface_name == "water" else 1
+                if surface_name == "water":
+                    water_surface[max(0, row - radius_y):row + radius_y + 1, max(0, col - radius_x):col + radius_x + 1] = True
             if category in {"trail", "road"}:
                 # Both radii derive from the actual swept feature width.  The
                 # second width is a soft transition, not a semantic boundary.
@@ -575,6 +578,8 @@ def build_structural_geometry(
             occupied |= mask
             exclusion |= mask
             surface[mask] = 2 if feature["geometry"].get("water_surface") else 1
+            if feature["geometry"].get("water_surface"):
+                water_surface[mask] = True
             z = float(surface_level if feature["geometry"].get("terrain_operation") == "basin" else (np.mean(modified[mask]) if np.any(mask) else level))
             vertices, triangles = _surface_mesh(polygon, z)
             centerline_payload = []
@@ -599,10 +604,11 @@ def build_structural_geometry(
     np.save(output_dir / "structural_exclusion_mask.npy", exclusion)
     np.save(output_dir / "structural_occupied_mask.npy", occupied)
     np.save(output_dir / "surface_type_mask.npy", surface)
+    np.save(output_dir / "water_surface_mask.npy", water_surface)
     np.save(output_dir / "trail_clearance_field.npy", trail_clearance)
     np.save(output_dir / "trail_exclusion_mask.npy", trail_exclusion)
     np.save(output_dir / "structural_placement_weights.npy", trail_clearance)
-    payload = {"status": "ok", "features": features, "structural_meshes": meshes, "terrain_modified": bool(np.any(modified != height)), "lake_integrations": lake_integrations, "metrics": {"structural_feature_count": len(features), "trail_count": sum(f["semantic_category"] == "trail" for f in features), "road_count": sum(f["semantic_category"] == "road" for f in features), "river_count": sum(f["semantic_category"] in {"river", "stream"} for f in features), "lake_count": sum(f["semantic_category"] == "lake" for f in features), "hunyuan_calls_avoided": len(features), "trail_exclusion_cells": int(trail_exclusion.sum())}, "placement_influence": {"trail_clearance_field": str(output_dir / "trail_clearance_field.npy"), "trail_exclusion_mask": str(output_dir / "trail_exclusion_mask.npy"), "structural_placement_weights": str(output_dir / "structural_placement_weights.npy")}}
+    payload = {"status": "ok", "features": features, "structural_meshes": meshes, "terrain_modified": bool(np.any(modified != height)), "lake_integrations": lake_integrations, "metrics": {"structural_feature_count": len(features), "trail_count": sum(f["semantic_category"] == "trail" for f in features), "road_count": sum(f["semantic_category"] == "road" for f in features), "river_count": sum(f["semantic_category"] in {"river", "stream"} for f in features), "lake_count": sum(f["semantic_category"] == "lake" for f in features), "hunyuan_calls_avoided": len(features), "trail_exclusion_cells": int(trail_exclusion.sum())}, "placement_influence": {"trail_clearance_field": str(output_dir / "trail_clearance_field.npy"), "trail_exclusion_mask": str(output_dir / "trail_exclusion_mask.npy"), "structural_placement_weights": str(output_dir / "structural_placement_weights.npy"), "water_surface_mask": str(output_dir / "water_surface_mask.npy")}}
     (output_dir / "structural_branch.json").write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     return payload
 

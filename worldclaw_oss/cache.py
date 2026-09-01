@@ -20,3 +20,4 @@ class ContentCache:
         temp=path.with_suffix(path.suffix+f".tmp-{os.getpid()}"); temp.write_bytes(data); os.replace(temp,path); return path
     def get(self,key: str,suffix: str) -> Path | None:
         path=self.path(key,suffix); return path if path.is_file() else None
+

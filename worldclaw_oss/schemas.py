@@ -23,6 +23,19 @@ class Polygon(StrictModel):
     points: list[Vec2] = Field(min_length=3)
 
 
+class PlacementProfile(StrictModel):
+    """Data contract for generic placement compatibility and preferences."""
+
+    requires_dry_support: bool = True
+    avoid_structural_exclusion: bool = True
+    required_support_surfaces: list[str] = Field(default_factory=list)
+    forbidden_support_surfaces: list[str] = Field(default_factory=list)
+    allowed_support_surfaces: list[str] = Field(default_factory=list)
+    # Optional falloff distances (metres) for named environmental masks.
+    distance_preferences: dict[str, float] = Field(default_factory=dict)
+    footprint_overlap_threshold: float | None = Field(default=None, ge=0.0, le=1.1)
+
+
 class ObjectSpec(StrictModel):
     category: str = Field(min_length=1)
     count: int = Field(ge=0, le=10000)
@@ -35,6 +48,7 @@ class ObjectSpec(StrictModel):
     # features such as lakes normally leave it unset.
     density: Literal["sparse", "medium", "dense"] | None = None
     appearance: str = ""
+    placement_profile: PlacementProfile = Field(default_factory=PlacementProfile)
 
     @model_validator(mode="before")
     @classmethod

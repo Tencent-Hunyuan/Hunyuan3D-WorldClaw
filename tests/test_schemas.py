@@ -22,3 +22,4 @@ def test_scene_plan_rejects_bad_coverage():
     raw["regions"][0]["coverage"] = 0.1
     with pytest.raises(ValueError, match="coverage"):
         ScenePlan.model_validate(raw)
+

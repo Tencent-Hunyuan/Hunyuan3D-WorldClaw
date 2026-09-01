@@ -21,3 +21,4 @@ testpaths = ["tests"]
 
 [tool.setuptools.packages.find]
 include = ["worldclaw_oss*"]
+

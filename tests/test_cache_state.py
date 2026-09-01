@@ -20,3 +20,4 @@ def test_state_db_persists_resume_state(tmp_path):
     reopened = StateDB(tmp_path / "state.sqlite3")
     assert reopened.status("run", Stage.INTENT) == "complete"
     assert reopened.attempts("run", Stage.INTENT) == 1
+

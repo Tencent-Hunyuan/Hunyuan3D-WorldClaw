@@ -170,6 +170,7 @@ def prepare_structural_agent_input(work_dir: Path, plan: dict[str, Any]) -> dict
         "required_outputs": [
             "structural_plan.json", "structural_branch.json", "terrain_structural.npz",
             "structural_exclusion_mask.npy", "structural_occupied_mask.npy", "surface_type_mask.npy",
+            "water_surface_mask.npy",
             "trail_clearance_field.npy", "trail_exclusion_mask.npy", "structural_placement_weights.npy",
             "structural_validation.json",
         ],
