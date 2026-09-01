@@ -42,7 +42,9 @@ generation concerns:
   requires_dry_support=true for assets that cannot be submerged, set it false
   only when the asset can physically contact water, and use named support
   surfaces or distance_preferences for reusable environmental constraints.
-  Do not encode these requirements in category names.
+  Prefer the workflow surface keys dry_terrain, water, trail, and
+  structural_exclusion; compatibility aliases such as forest_floor are also
+  accepted. Do not encode these requirements in category names.
 
 Quantity rules when the prompt does not provide an explicit number:
 - Preserve every explicit numeric quantity exactly.
