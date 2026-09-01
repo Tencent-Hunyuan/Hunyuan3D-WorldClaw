@@ -31,7 +31,7 @@ from .layout import (
     target_world_size_from_environment,
 )
 from .models import AssetTypeClassifier, CommandWorker, ModelLock, OpenAIJSONClient, Planner, VLLMClient
-from .placement_constraints import apply_hard_gate, requirements_from_spec
+from .placement_constraints import apply_hard_gate, prepare_surface_masks, requirements_from_spec
 from .schemas import AssetInstance, RunManifest, ScenePlan, Stage
 from .state import StateDB
 from .structural import (
@@ -527,11 +527,11 @@ class Pipeline:
             trail_exclusion = np.load(self.work / "structural" / "trail_exclusion_mask.npy") if (self.work / "structural" / "trail_exclusion_mask.npy").exists() else np.zeros_like(labels, dtype=bool)
             water_path = self.work / "structural" / "water_surface_mask.npy"
             water_surface = np.load(water_path) if water_path.exists() else None
-            surface_masks = {
+            surface_masks = prepare_surface_masks({
                 "structural_exclusion": exclusion,
                 "trail": trail_exclusion,
                 "water": water_surface,
-            }
+            })
             rng = random.Random(stable_seed(self.prompt, self.seed))
             records, meshes = [], []
             width, depth = plan_value.world_size_m

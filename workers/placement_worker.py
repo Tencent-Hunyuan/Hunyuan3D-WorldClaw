@@ -20,6 +20,7 @@ from worldclaw_oss.geometry import cropped_intrinsics, gltf_vertices_to_z_up, pi
 from worldclaw_oss.placement_constraints import (
     apply_hard_gate,
     footprint_intersects_mask,
+    prepare_surface_masks,
     requirements_from_spec,
 )
 from worldclaw_oss.schemas import AssetInstance
@@ -339,7 +340,7 @@ def scatter_environment(
         raise ValueError("structural placement influence shape does not match layout")
     if trail_exclusion_mask is None:
         trail_exclusion_mask = np.zeros_like(labels, dtype=bool)
-    surface_masks = dict(surface_masks or {})
+    surface_masks = prepare_surface_masks(dict(surface_masks or {}))
     surface_masks.setdefault("trail", np.asarray(trail_exclusion_mask, dtype=bool))
     if exclusion_mask is not None:
         surface_masks.setdefault("structural_exclusion", np.asarray(exclusion_mask, dtype=bool))
@@ -744,11 +745,11 @@ def main():
         layout_weights=layout_weights,
         structural_placement_weights=structural_placement_weights,
         trail_exclusion_mask=trail_exclusion_mask,
-        surface_masks={
+        surface_masks=prepare_surface_masks({
             "structural_exclusion": exclusion_mask,
             "trail": trail_exclusion_mask,
             "water": water_surface_mask,
-        },
+        }),
     )
     reconstruction_assets = reconstruction.get("assets", [])
     tolerance_fraction = float(request.get("contact_tolerance_fraction", 0.05))

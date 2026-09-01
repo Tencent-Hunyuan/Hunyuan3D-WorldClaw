@@ -12,6 +12,47 @@ from typing import Any, Mapping
 import numpy as np
 
 
+_SURFACE_ALIASES = {
+    # Planner-facing names for the same physical support class. These are
+    # surface semantics, not asset/category rules.
+    "forest_floor": "dry_terrain",
+    "forest_ground": "dry_terrain",
+    "ground": "dry_terrain",
+    "land": "dry_terrain",
+    "dry_ground": "dry_terrain",
+    "terrain": "dry_terrain",
+    "water_surface": "water",
+    "lake_surface": "water",
+}
+
+
+def canonical_surface_name(value: object) -> str:
+    key = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+    return _SURFACE_ALIASES.get(key, key)
+
+
+def prepare_surface_masks(surface_masks: Mapping[str, np.ndarray | None]) -> dict[str, np.ndarray]:
+    """Normalize masks and derive generic dry support from available geometry."""
+    masks: dict[str, np.ndarray] = {}
+    for name, value in surface_masks.items():
+        if value is None:
+            continue
+        masks[canonical_surface_name(name)] = np.asarray(value, dtype=bool)
+    if not masks:
+        return masks
+    shapes = {mask.shape for mask in masks.values()}
+    if len(shapes) != 1:
+        raise ValueError("surface masks must share one raster shape")
+    shape = next(iter(shapes))
+    dry = np.ones(shape, dtype=bool)
+    for name in ("water", "structural_exclusion", "trail"):
+        mask = masks.get(name)
+        if mask is not None:
+            dry &= ~mask
+    masks.setdefault("dry_terrain", dry)
+    return masks
+
+
 @dataclass(frozen=True)
 class PlacementRequirements:
     requires_dry_support: bool = True
@@ -35,7 +76,7 @@ def requirements_from_spec(spec: Mapping[str, Any]) -> PlacementRequirements:
             value = (value,)
         if not isinstance(value, (list, tuple, set)):
             return ()
-        return tuple(dict.fromkeys(str(item).strip().lower() for item in value if str(item).strip()))
+        return tuple(dict.fromkeys(canonical_surface_name(item) for item in value if str(item).strip()))
 
     preferences = raw.get("distance_preferences", {})
     if not isinstance(preferences, Mapping):
@@ -47,7 +88,7 @@ def requirements_from_spec(spec: Mapping[str, Any]) -> PlacementRequirements:
         except (TypeError, ValueError):
             continue
         if str(key).strip() and np.isfinite(numeric) and numeric > 0.0:
-            parsed_preferences.append((str(key).strip().lower(), numeric))
+            parsed_preferences.append((canonical_surface_name(key), numeric))
     try:
         overlap_threshold = (
             None if raw.get("footprint_overlap_threshold") in (None, "")
@@ -73,9 +114,10 @@ def apply_hard_gate(
 ) -> np.ndarray:
     """Apply generic support/structure compatibility to candidate cells."""
     gate = np.asarray(base_gate, dtype=bool).copy()
+    surface_masks = prepare_surface_masks(surface_masks)
 
     def mask_for(name: str) -> np.ndarray | None:
-        value = surface_masks.get(name)
+        value = surface_masks.get(canonical_surface_name(name))
         if value is None:
             return None
         value = np.asarray(value, dtype=bool)
