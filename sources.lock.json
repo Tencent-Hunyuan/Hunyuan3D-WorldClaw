@@ -1,0 +1,24 @@
+{
+  "schema_version": "worldclaw-oss-source-lock-v1",
+  "generated_at": "2026-08-19",
+  "sources": {
+    "hunyuan3d": {
+      "repository": "https://github.com/Tencent-Hunyuan/Hunyuan3D-2.1.git",
+      "revision": "82920d643c0dc2f7bfd7255f45f62d386edfe60c",
+      "license": "Tencent Hunyuan Community License",
+      "purpose": "Hunyuan3D-2.1 inference source"
+    },
+    "trellis": {
+      "repository": "https://github.com/microsoft/TRELLIS.git",
+      "revision": "442aa1e1afb9014e80681d3bf604e8d728a86ee7",
+      "license": "MIT",
+      "purpose": "image-to-3D fallback inference source"
+    },
+    "trellis_utils3d": {
+      "repository": "https://github.com/EasternJournalist/utils3d.git",
+      "revision": "9a4eb15e4021b67b12c460c7057d642626897ec8",
+      "license": "upstream repository license",
+      "purpose": "TRELLIS pinned utility dependency"
+    }
+  }
+}

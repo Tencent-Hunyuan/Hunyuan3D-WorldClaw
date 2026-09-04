@@ -1,0 +1,85 @@
+{
+  "fallbacks": {
+    "image": "flux_dev -> flux_schnell only on authorization failure",
+    "reconstruction": "hunyuan3d -> trellis only on verified install or weight failure"
+  },
+  "generated_at": "2026-08-19T11:17:54.707797+00:00",
+  "models": {
+    "flux_dev": {
+      "license": "flux-1-dev-non-commercial-license",
+      "model_id": "black-forest-labs/FLUX.1-dev",
+      "purpose": "concept, asset reference, and terrain-conditioned regional images",
+      "resolved": true,
+      "revision": "3de623fc3c33e44ffbe2bad470d0f45bccf2eb21",
+      "size_bytes": 69256397749
+    },
+    "flux_schnell": {
+      "license": "apache-2.0",
+      "model_id": "black-forest-labs/FLUX.1-schnell",
+      "purpose": "image generation fallback when FLUX.1-dev authorization is unavailable",
+      "resolved": true,
+      "revision": "741f7c3ce8b383c54771c7003378a50191e9efe9",
+      "size_bytes": 58051635877
+    },
+    "grounding_dino": {
+      "license": "apache-2.0",
+      "model_id": "IDEA-Research/grounding-dino-base",
+      "purpose": "open-vocabulary detection",
+      "resolved": true,
+      "revision": "12bdfa3120f3e7ec7b434d90674b3396eccf88eb",
+      "size_bytes": 2805157461
+    },
+    "hunyuan3d": {
+      "license": "tencent-hunyuan-community",
+      "model_id": "tencent/Hunyuan3D-2.1",
+      "purpose": "environment and per-instance textured mesh generation",
+      "resolved": true,
+      "revision": "0b94677654c57bb9a6b6845cd7b704ccf551d327",
+      "size_bytes": 14952260082
+    },
+    "planner": {
+      "license": "provider-api",
+      "model_id": "gpt-5.6-sol",
+      "purpose": "intent extraction, scene planning, and asset routing",
+      "requested_model_id": null,
+      "resolution_reason": "Explicitly forced OpenAI-compatible planner/router model; no local Qwen planner is used.",
+      "resolved": true,
+      "revision": "api",
+      "size_bytes": 0
+    },
+    "reference_image": {
+      "license": "provider-api",
+      "model_id": "gpt-image-2",
+      "purpose": "environment asset reference image generation",
+      "resolved": true,
+      "revision": "api",
+      "size_bytes": 0
+    },
+    "sam2": {
+      "license": "apache-2.0",
+      "model_id": "facebook/sam2.1-hiera-large",
+      "purpose": "sliding-window instance segmentation",
+      "resolved": true,
+      "revision": "665f8e2ad61cf5f53d65644ff27c8ee525124610",
+      "size_bytes": 2694070080
+    },
+    "trellis": {
+      "license": "mit",
+      "model_id": "microsoft/TRELLIS-image-large",
+      "purpose": "3D reconstruction fallback only when Hunyuan3D cannot be installed or loaded",
+      "resolved": true,
+      "revision": "25e0d31ffbebe4b5a97464dd851910efc3002d96",
+      "size_bytes": 3300497168
+    },
+    "vlm": {
+      "license": "apache-2.0",
+      "model_id": "Qwen/Qwen2.5-VL-7B-Instruct",
+      "purpose": "render defect inspection",
+      "resolved": true,
+      "revision": "cc594898137f460bfe9f0759e9844b3ce807cfb5",
+      "size_bytes": 16584414560
+    }
+  },
+  "resolution_note": "Resolved from Hugging Face API through an explicit proxy when configured; HF_TOKEN value was not persisted.",
+  "schema_version": "worldclaw-oss-model-lock-v1"
+}

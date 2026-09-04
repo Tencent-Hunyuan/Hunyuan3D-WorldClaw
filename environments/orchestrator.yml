@@ -1,0 +1,11 @@
+name: worldclaw-orchestrator
+channels: [conda-forge]
+dependencies:
+  - python=3.11
+  - numpy
+  - pydantic>=2.7
+  - trimesh
+  - open3d
+  - pytest
+  - pip
+
