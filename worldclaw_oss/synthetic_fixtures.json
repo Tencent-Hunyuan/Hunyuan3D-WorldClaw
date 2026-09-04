@@ -1,0 +1,39 @@
+{
+  "world_size_m": [100.0, 100.0],
+  "templates": [
+    {
+      "match_tokens": ["desert"],
+      "theme": "desert city",
+      "materials": {"walled_city": "sand", "dunes": "sand", "oasis": "sand"},
+      "regions": [
+        {"id": "walled_city", "center": [0, 5], "objects": [{"category": "building", "count": 12}], "terrain": {"kind": "terrace", "strength": 3.0}},
+        {"id": "dunes", "center": [0, 30], "objects": [{"category": "rock", "count": 6}], "terrain": {"kind": "dune", "strength": 3.0}},
+        {"id": "oasis", "center": [-30, -24], "objects": [{"category": "palm", "count": 8}], "terrain": {"kind": "erosion", "strength": 3.0}}
+      ]
+    },
+    {
+      "match_tokens": ["forest", "lake"],
+      "theme": "forest lake",
+      "regions": [
+        {"id": "lake", "center": [10, 0], "objects": [{"category": "rock", "count": 4}], "terrain": {"kind": "erosion", "strength": 3.0}},
+        {"id": "forest", "center": [-25, 18], "objects": [{"category": "tree", "count": 16}], "terrain": {"kind": "peak", "strength": 8.0}},
+        {"id": "cabins", "center": [28, -22], "objects": [{"category": "cabin", "count": 5}], "terrain": {"kind": "terrace", "strength": 3.0}}
+      ],
+      "augmentations": [
+        {"match_tokens": ["trail", "structural"], "objects": [
+          {"region_id": "lake", "category": "lake", "count": 1, "instance_strategy": "region"},
+          {"region_id": "forest", "category": "trail", "count": 1, "instance_strategy": "path", "appearance": "dirt trail"}
+        ]}
+      ]
+    },
+    {
+      "default": true,
+      "theme": "medieval castle",
+      "regions": [
+        {"id": "castle_hill", "center": [0, 25], "objects": [{"category": "castle", "count": 1}, {"category": "tree", "count": 4}], "terrain": {"kind": "peak", "strength": 8.0}},
+        {"id": "village", "center": [25, 0], "objects": [{"category": "house", "count": 10}], "terrain": {"kind": "erosion", "strength": 3.0}},
+        {"id": "farmland", "center": [-28, -20], "objects": [{"category": "tree", "count": 5}, {"category": "rock", "count": 3}], "terrain": {"kind": "terrace", "strength": 3.0}}
+      ]
+    }
+  ]
+}

@@ -30,7 +30,7 @@ from workers.common import load_stage_response, read_request, worker_args, write
 # version is part of the cache key so old verdicts cannot silently survive a
 # validator behavior change. It may be overridden for an explicitly versioned
 # deployment or smoke test.
-MESH_VALIDATOR_VERSION = os.getenv("WORLDCLAW_MESH_VALIDATOR_VERSION", "mesh-validator-v3")
+MESH_VALIDATOR_VERSION = os.getenv("WORLDCLAW_MESH_VALIDATOR_VERSION", "mesh-validator-v4")
 
 
 def _sha256_file(path: Path) -> str:
@@ -197,6 +197,30 @@ def _render(blender: str, mesh: Path, output: Path) -> list[Path]:
     return views
 
 
+def _contact_sheet(views: list[Path]) -> Path:
+    """Persist one compact image containing all ordered turntable views."""
+    from PIL import Image, ImageDraw
+
+    if not views:
+        raise ValueError("cannot build a contact sheet without turntable views")
+    output = views[0].parent / "contact_sheet.jpg"
+    tile_size = 320
+    columns = 4
+    rows = (len(views) + columns - 1) // columns
+    sheet = Image.new("RGB", (columns * tile_size, rows * tile_size), (24, 24, 24))
+    draw = ImageDraw.Draw(sheet)
+    for index, path in enumerate(views):
+        with Image.open(path) as source:
+            tile = source.convert("RGB")
+            tile.thumbnail((tile_size - 8, tile_size - 28), Image.Resampling.LANCZOS)
+            x = (index % columns) * tile_size + (tile_size - tile.width) // 2
+            y = (index // columns) * tile_size + 22 + (tile_size - 22 - tile.height) // 2
+            sheet.paste(tile, (x, y))
+        draw.text(((index % columns) * tile_size + 8, (index // columns) * tile_size + 4), f"view_{index:02d}", fill=(255, 255, 255))
+    sheet.save(output, format="JPEG", quality=88, optimize=True)
+    return output
+
+
 def _inspect(request: dict, asset: dict, views: list[Path], metrics: dict, defects: list[str]) -> dict:
     system = """You are an asset-level 3D mesh quality inspector.
 
@@ -237,10 +261,16 @@ Use geometry metrics only to support or investigate a visually observed defect.
 Do not infer quality from category or bounding-box extents.
 
 Return exactly status, severity, defects, reason, retry_action as JSON."""
+    contact_sheet = _contact_sheet(views)
     user = json.dumps({
         "asset_id": asset.get("id"), "category": asset.get("category"),
         "asset_type": asset.get("asset_type"), "reference": asset.get("source_image"),
         "geometry_metrics": metrics, "local_defects": defects,
+        "turntable_views": {
+            "count": len(views),
+            "order": [path.name for path in views],
+            "contact_sheet": str(contact_sheet),
+        },
     }, ensure_ascii=False)
     if os.getenv("WORLDCLAW_MESH_VALIDATION_LOCAL_ONLY", "0") == "1":
         severity = min(1.0, 0.35 * len(defects))
@@ -253,7 +283,7 @@ Return exactly status, severity, defects, reason, retry_action as JSON."""
     if validation_provider == "openai":
         client = OpenAIClient()
         value = client.vision_json(
-            system=system, user=user, image_paths=views,
+            system=system, user=user, image_paths=[contact_sheet],
             schema=MeshValidationReport.model_json_schema(),
             model=client.config.validation_model,
         )
@@ -263,9 +293,8 @@ Return exactly status, severity, defects, reason, retry_action as JSON."""
         raise RuntimeError("mesh validation requires WORLDCLAW_VLM_URL or OpenAI provider")
     import requests
     content = [{"type": "text", "text": user}]
-    for path in views:
-        encoded = base64.b64encode(path.read_bytes()).decode("ascii")
-        content.append({"type": "image_url", "image_url": {"url": "data:image/png;base64," + encoded}})
+    encoded = base64.b64encode(contact_sheet.read_bytes()).decode("ascii")
+    content.append({"type": "image_url", "image_url": {"url": "data:image/jpeg;base64," + encoded}})
     payload = {
         "model": request["models"]["vlm"]["model_id"],
         "messages": [{"role": "system", "content": system}, {"role": "user", "content": content}],

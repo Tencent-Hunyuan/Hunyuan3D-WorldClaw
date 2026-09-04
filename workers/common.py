@@ -6,7 +6,10 @@ import json
 import os
 import random
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from worldclaw_oss.schemas import DefectReport
 
 
 def worker_args() -> argparse.Namespace:
@@ -97,3 +100,50 @@ def resolve_model_source(record: dict[str, Any]) -> tuple[str, str | None]:
         if snapshot.is_dir():
             return str(snapshot), None
     return record["model_id"], record["revision"]
+
+
+def parse_defect_report(value: dict[str, Any]) -> DefectReport:
+    """Normalize compatible VLM defect payloads at the worker boundary."""
+    # Keep isolated image/mesh workers importable in environments that do not
+    # carry the orchestrator's pydantic dependency.  Only VLM defect parsing
+    # needs the schema model at runtime.
+    from worldclaw_oss.schemas import DefectReport
+
+    normalized = {key: value[key] for key in ("defects", "acceptable", "summary") if key in value}
+    raw_defects = normalized.get("defects") or []
+    allowed_kinds = {"floating", "penetration", "overlap", "slope", "scale", "texture", "mesh", "other"}
+    severity_aliases = {
+        "none": 0.0, "negligible": 0.05, "low": 0.2, "minor": 0.3,
+        "moderate": 0.5, "medium": 0.5, "major": 0.75, "high": 0.8,
+        "critical": 1.0, "severe": 1.0, "variable": 0.5, "unspecified": 0.5,
+    }
+    defects = []
+    for raw in raw_defects if isinstance(raw_defects, list) else []:
+        if isinstance(raw, str):
+            raw = {"kind": "other", "recommendation": raw}
+        if not isinstance(raw, dict):
+            continue
+        kind = str(raw.get("kind", "other")).strip().lower()
+        if kind not in allowed_kinds:
+            kind = "other"
+        severity = raw.get("severity", 0.5)
+        if isinstance(severity, str):
+            try:
+                severity = float(severity.strip())
+            except ValueError:
+                severity = severity_aliases.get(severity.strip().lower(), 0.5)
+        try:
+            severity = min(1.0, max(0.0, float(severity)))
+        except (TypeError, ValueError):
+            severity = 0.5
+        recommendation = raw.get("recommendation", raw.get("action", raw.get("fix", "inspect reported defect")))
+        defects.append({
+            "asset_id": raw.get("asset_id") if isinstance(raw.get("asset_id"), str) else None,
+            "kind": kind,
+            "severity": severity,
+            "recommendation": str(recommendation),
+        })
+    normalized["defects"] = defects
+    normalized.setdefault("acceptable", not bool(defects))
+    normalized.setdefault("summary", "Derived from the returned defect list; the VLM omitted a summary field.")
+    return DefectReport.model_validate(normalized)

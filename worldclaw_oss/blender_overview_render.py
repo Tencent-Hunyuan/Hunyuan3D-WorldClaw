@@ -54,8 +54,21 @@ def make_material(name, color, roughness=0.82):
     return material
 
 
+def _scene_has_tokens(scene, tokens):
+    """Inspect imported semantic object metadata instead of run-directory names."""
+    wanted = tuple(str(token).lower() for token in tokens)
+    for obj in scene.objects:
+        values = [obj.name.lower()]
+        for key in ("category", "asset_role", "scene_role"):
+            if key in obj:
+                values.append(str(obj[key]).lower())
+        if any(token in value for token in wanted for value in values):
+            return True
+    return False
+
+
 def prepare_materials(scene, run_name):
-    desert = "desert" in run_name.lower()
+    desert = _scene_has_tokens(scene, ("desert", "sand", "dune"))
     palette = {
         "terrain": (0.62, 0.42, 0.18) if desert else (0.08, 0.22, 0.06),
         "tree": (0.02, 0.20, 0.03),
@@ -302,13 +315,12 @@ def configure_directional_lighting(scene):
         light_settings.use_ambient_occlusion = True
 
 
-def add_presentation_proxy(scene, run_name):
+def add_presentation_proxy(scene, run_name=None):
     """Add a clearly marked low-poly subject when the generated mesh is degenerate."""
-    lowered = run_name.lower()
     candidates = [obj for obj in scene.objects if obj.type == "MESH" and obj.name.lower() != "terrain"]
     if not candidates:
         return {"enabled": False}
-    if "castle" in lowered:
+    if _scene_has_tokens(scene, ("castle",)):
         subject = next((o for o in candidates if "castle_castle" in o.name.lower()), max(candidates, key=lambda o: o.dimensions.length))
         anchor = _clamp_anchor_to_terrain(scene, subject.matrix_world.translation.copy())
         subject.hide_render = True
@@ -323,7 +335,7 @@ def add_presentation_proxy(scene, run_name):
             _proxy_cube("Presentation_Castle_Tower", (anchor.x + dx, ground + 8.0, anchor.z + dz), (5.0, 15.0, 5.0), stone)
             _proxy_cone("Presentation_Castle_TowerRoof", (anchor.x + dx, ground + 18.0, anchor.z + dz), 4.0, 5.0, roof)
         return {"enabled": True, "type": "castle_low_poly_proxy", "anchor": [float(anchor.x), float(ground), float(anchor.z)]}
-    if "desert" in lowered:
+    if _scene_has_tokens(scene, ("desert", "oasis", "dune")):
         subject = max(candidates, key=lambda o: o.dimensions.length)
         anchor = _clamp_anchor_to_terrain(scene, subject.matrix_world.translation.copy())
         subject.hide_render = True
@@ -430,8 +442,9 @@ def configure_scene(scene, minimum, maximum, run_name):
     configure_directional_lighting(scene)
 
     prepare_materials(scene, run_name)
-    terrain_presentation = prepare_forest_terrain(scene) if "forest" in run_name.lower() else None
-    if "forest" in run_name.lower():
+    forest = _scene_has_tokens(scene, ("forest", "tree", "vegetation"))
+    terrain_presentation = prepare_forest_terrain(scene) if forest else None
+    if forest:
         scene.view_settings.exposure = 1.1
     views = asset_focus_views(scene)
     camera_data = bpy.data.cameras.get("OverviewCamera") or bpy.data.cameras.new("OverviewCamera")
@@ -447,7 +460,7 @@ def configure_scene(scene, minimum, maximum, run_name):
     # Blender uses Y-up after glTF import. Forest uses a fixed-height circular
     # orbit in the X-Z ground plane; the first view is aligned with the X axis.
     orbit = None
-    if "forest" in run_name.lower():
+    if forest:
         target, depth = views[0]
         radius = max(150.0, depth * 1.08)
         orbit_height = max(108.0, radius * 0.72)
@@ -504,7 +517,7 @@ def configure_scene(scene, minimum, maximum, run_name):
         return camera, views, minimum, maximum, orbit, terrain_presentation
 
     # Non-forest runs retain their existing framing path.
-    elevation = 0.48 if any(token in run_name.lower() for token in ("desert", "forest")) else 0.08
+    elevation = 0.48 if _scene_has_tokens(scene, ("desert", "forest", "tree")) else 0.08
     directions = [
         Vector((0.85, elevation, -0.95)),
         Vector((-0.95, elevation, -0.75)),
@@ -530,11 +543,11 @@ def main():
     scene = bpy.context.scene
     minimum, maximum = scene_bounds(scene)
     settled_assets = settle_assets_on_terrain(scene)
-    presentation_proxy = add_presentation_proxy(scene, run.name)
-    water_surface = add_forest_water_surface(scene) if "forest" in run.name.lower() else None
+    presentation_proxy = add_presentation_proxy(scene)
+    water_surface = add_forest_water_surface(scene) if _scene_has_tokens(scene, ("lake", "water", "river")) else None
     # Bounds and focus views must be computed after the coordinate correction.
     minimum, maximum = scene_bounds(scene)
-    camera, views, minimum, maximum, orbit, terrain_presentation = configure_scene(scene, minimum, maximum, run.name)
+    camera, views, minimum, maximum, orbit, terrain_presentation = configure_scene(scene, minimum, maximum)
 
     scene.frame_set(1)
     scene.render.image_settings.file_format = "PNG"

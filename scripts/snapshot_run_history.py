@@ -18,7 +18,12 @@ STAGE_PATTERNS = {
     "intent": ["intent.json"],
     "plan": ["scene_plan.json"],
     "layout": ["layout_*.npy", "layout.json"],
-    "terrain": ["terrain.npz", "terrain_*.json"],
+    "terrain": [
+        "terrain.npz",
+        "terrain_*.json",
+        "terrain.blend",
+        "terrain_preview.png",
+    ],
     "environment_assets": ["environment_*", "assets.json", "asset_*"] ,
     "region_composition": ["region_composition*", "terrain_condition.png"],
     "segment": ["segmentation*"],

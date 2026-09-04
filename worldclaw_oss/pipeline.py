@@ -12,7 +12,7 @@ import time
 import uuid
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Callable
+from typing import Any, Callable
 
 import numpy as np
 
@@ -26,18 +26,14 @@ from .hunyuan_pool import HunyuanDaemonPool
 from .layout import (
     deterministic_layout,
     normalize_scene_plan,
+    sample_layout,
     stable_seed,
     synthetic_plan,
     target_world_size_from_environment,
 )
 from .models import AssetTypeClassifier, CommandWorker, ModelLock, OpenAIJSONClient, Planner, VLLMClient
-from .placement_constraints import (
-    apply_hard_gate,
-    footprint_satisfies_requirements,
-    prepare_surface_masks,
-    requirements_from_spec,
-)
-from .schemas import AssetInstance, RunManifest, ScenePlan, Stage
+from .placement_constraints import apply_hard_gate, prepare_surface_masks, requirements_from_spec
+from .schemas import AssetInstance, RunManifest, ScenePlan, Stage, TerrainMacroPlan
 from .state import StateDB
 from .structural import (
     StructuralFeatureAgent, build_structural_geometry, structural_features_from_plan, validate_structural_branch,
@@ -46,12 +42,243 @@ from .structural_workflow import (
     build_validation_bundle, plan_validation_views, prepare_structural_agent_input,
     render_additional_views, render_structural_views, visual_validate_bundle,
 )
-from .terrain import boundary_discontinuity, generate_terrain
+from .terrain import boundary_discontinuity, generate_terrain, validate_regional_detail_preserves_macro
+from .terrain_macro import derive_macro_plan, generate_macro_height, macro_vertices, validate_macro_height, write_validation_bundle, TerrainMacroPlanner, visual_validate_terrain, replan_macro_plan, summarize_layout
 from .validation import sha256, validate_run
 
 
 def _json(path: Path, value):
     path.write_text(json.dumps(value, indent=2, sort_keys=True, ensure_ascii=False) + "\n", encoding="utf-8")
+
+
+def _terrain_planner_context(work: Path, scene: ScenePlan, layout_summary: dict[str, Any]) -> dict[str, Any]:
+    """Load the auditable inputs used by the first Terrain Planner request."""
+    root = work / "terrain_planner_input"
+    context: dict[str, Any] = {"layout_summary": layout_summary}
+    for name in ("intent.json", "scene_plan.json", "world_spec.json", "terrain_constraints.json", "structural_intents.json"):
+        path = root / name
+        if path.is_file():
+            try:
+                context[name.removesuffix(".json")] = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                context[name.removesuffix(".json")] = {"path": str(path), "invalid_json": True}
+    # Preserve the exact first planner exchange when this helper is called
+    # during REPLAN.  The input snapshots above are the source materials, but
+    # these records also capture the serialized request and provider response
+    # that produced the current Macro Plan.
+    for name in ("terrain_macro_planner_request.json", "terrain_macro_planner_response.json"):
+        path = work / name
+        if path.is_file():
+            try:
+                context[name.removesuffix(".json")] = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                context[name.removesuffix(".json")] = {"path": str(path), "invalid_json": True}
+    # A standalone Terrain validation response is an explicit contract for the
+    # next planner call. Keep the payload and relative path so REPLAN can mark
+    # every reported failure/recommendation as a hard constraint.
+    response_constraints: list[dict[str, Any]] = []
+    for path in sorted(work.rglob("*response.json")):
+        relative = path.relative_to(work)
+        if (
+            "terrain" not in str(relative).lower()
+            or path.name not in {"response.json", "terrain_visual_validation_response.json"}
+        ):
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            payload = {"path": str(path), "invalid_json": True}
+        response_constraints.append({"path": str(relative), "payload": payload})
+    if response_constraints:
+        context["response_json_hard_constraints"] = response_constraints
+    arrays: dict[str, Any] = {}
+    for path in sorted((root / "layout").glob("*.npy")):
+        try:
+            array = np.load(path, mmap_mode="r")
+            arrays[path.name] = {"path": str(path), "shape": list(array.shape), "dtype": str(array.dtype)}
+        except (OSError, ValueError):
+            arrays[path.name] = {"path": str(path), "unreadable": True}
+    context["layout_arrays"] = arrays
+    masks: dict[str, Any] = {}
+    for path in sorted((root / "layout" / "masks").glob("*.npy")):
+        try:
+            array = np.load(path, mmap_mode="r")
+            masks[path.stem] = {"path": str(path), "shape": list(array.shape), "cells": int(np.asarray(array).sum())}
+        except (OSError, ValueError):
+            masks[path.stem] = {"path": str(path), "unreadable": True}
+    context["region_masks"] = masks
+    return context
+
+
+def _write_terrain_blend(work: Path) -> dict[str, str]:
+    """Persist an inspectable Terrain-only Blend beside terrain.npz.
+
+    Final ``scene.blend`` is still produced by the export/finalization stage.
+    This lightweight artifact is useful when a run stops before assets exist;
+    missing Blender is recorded as a skip so synthetic control-host runs stay
+    executable.
+    """
+    terrain_root = work / "terrain"
+    terrain_root.mkdir(exist_ok=True)
+    source = terrain_root / "terrain.npz"
+    metadata_path = terrain_root / "terrain_blend_metadata.json"
+    output = terrain_root / "terrain.blend"
+    preview = terrain_root / "terrain_preview.png"
+    blender = Path(os.getenv(
+        "BLENDER_BIN",
+        str(Path.home() / "apps" / "blender-4.2.0-linux-x64" / "blender"),
+    ))
+    if not source.is_file():
+        raise FileNotFoundError(f"terrain artifact is missing: {source}")
+    if not blender.is_file():
+        result = {
+            "status": "skipped",
+            "reason": "Blender executable is unavailable",
+            "source_npz": str(source),
+            "blend": str(output),
+            "preview": str(preview),
+        }
+        _json(metadata_path, result)
+        return result
+    script = Path(__file__).resolve().parents[1] / "scripts" / "blender_terrain_preview.py"
+    subprocess.run(
+        [
+            str(blender), "--background", "--python", str(script), "--",
+            "--terrain", str(source), "--output", str(output),
+            "--metadata", str(metadata_path), "--preview", str(preview),
+        ],
+        check=True,
+        timeout=900,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.STDOUT,
+        text=True,
+    )
+    return json.loads(metadata_path.read_text(encoding="utf-8"))
+
+
+def _replan_macro_artifacts(
+    work: Path,
+    labels: np.ndarray,
+    weights: np.ndarray,
+    region_ids: tuple[str, ...],
+    resolution: int,
+    feedback: dict,
+    replanned_plan: TerrainMacroPlan | None = None,
+) -> tuple[TerrainMacroPlan, np.ndarray, dict]:
+    """Apply a targeted Macro replan and regenerate all dependent fields."""
+    plan_path = work / "terrain_macro_plan.json"
+    current = TerrainMacroPlan.model_validate_json(plan_path.read_text(encoding="utf-8"))
+    replanned = replanned_plan if replanned_plan is not None else replan_macro_plan(current, feedback)
+    _json(plan_path, replanned.model_dump(mode="json", exclude_none=True))
+    terrain_root = work / "terrain"
+    terrain_root.mkdir(exist_ok=True)
+    shutil.copy2(plan_path, terrain_root / "terrain_macro_plan.json")
+    height = generate_macro_height(
+        replanned, resolution, layout_weights=weights, region_ids=region_ids,
+    )
+    np.save(work / "macro_height.npy", height)
+    shutil.copy2(work / "macro_height.npy", terrain_root / "macro_height.npy")
+    metrics = validate_macro_height(height, replanned, labels, weights, region_ids)
+    _json(work / "terrain_macro_validation.json", metrics)
+    write_validation_bundle(work / "terrain_validation", height, labels, metrics)
+    shutil.copytree(work / "terrain_validation", terrain_root / "validation", dirs_exist_ok=True)
+    return replanned, height, metrics
+
+
+def _fallback_macro_artifacts(
+    work: Path,
+    scene: ScenePlan,
+    labels: np.ndarray,
+    weights: np.ndarray,
+    region_ids: tuple[str, ...],
+    resolution: int,
+) -> tuple[TerrainMacroPlan, np.ndarray, dict]:
+    """Rebuild a malformed provider plan from generic ScenePlan semantics."""
+    plan = derive_macro_plan(scene)
+    plan_path = work / "terrain_macro_plan.json"
+    _json(plan_path, plan.model_dump(mode="json", exclude_none=True))
+    terrain_root = work / "terrain"
+    terrain_root.mkdir(exist_ok=True)
+    shutil.copy2(plan_path, terrain_root / "terrain_macro_plan.json")
+    height = generate_macro_height(plan, resolution, layout_weights=weights, region_ids=region_ids)
+    np.save(work / "macro_height.npy", height)
+    shutil.copy2(work / "macro_height.npy", terrain_root / "macro_height.npy")
+    metrics = validate_macro_height(height, plan, labels, weights, region_ids)
+    _json(work / "terrain_macro_validation.json", metrics)
+    write_validation_bundle(work / "terrain_validation", height, labels, metrics)
+    shutil.copytree(work / "terrain_validation", terrain_root / "validation", dirs_exist_ok=True)
+    return plan, height, metrics
+
+
+def _record_terrain_retry(work: Path, feedback: dict) -> None:
+    """Persist targeted retry feedback without changing the random seed."""
+    path = work / "terrain" / "logs" / "terrain_retry_history.json"
+    path.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        history = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        history = {"strategy": "macro_plan_replan", "seed_changes": 0, "attempts": []}
+    history.setdefault("strategy", "macro_plan_replan")
+    history.setdefault("seed_changes", 0)
+    history.setdefault("attempts", [])
+    history["attempts"].append({
+        "attempt": len(history["attempts"]) + 1,
+        "reason": feedback.get("failures", ["validation"]),
+        "recommendations": feedback.get("recommendations", []),
+        "metrics": feedback.get("metrics", {}),
+    })
+    history["attempt"] = len(history["attempts"])
+    _json(path, history)
+
+
+def _recover_regional_detail(
+    work: Path,
+    scene: ScenePlan,
+    layout,
+    labels: np.ndarray,
+    weights: np.ndarray,
+    region_ids: tuple[str, ...],
+    seed: int,
+    macro_height: np.ndarray,
+) -> tuple[object, np.ndarray, dict]:
+    """Regenerate regional terrain after a preservation failure.
+
+    The random seed and layout remain immutable.  Recovery first adjusts the
+    planner-owned Macro Plan, then falls back to the generic ScenePlan
+    derivation if the targeted plan still cannot absorb regional detail.
+    """
+    value = generate_terrain(scene, layout, seed, macro_height=macro_height)
+    preservation = validate_regional_detail_preserves_macro(macro_height, value.height)
+    if preservation["macro_composition_preserved"]:
+        return value, macro_height, preservation
+
+    feedback = {
+        "status": "REPLAN",
+        "failures": ["regional_detail_preservation"],
+        "metrics": preservation,
+    }
+    _record_terrain_retry(work, feedback)
+    resolution = int(macro_height.shape[0])
+    _, replanned_height, _ = _replan_macro_artifacts(
+        work, labels, weights, region_ids, resolution, feedback,
+    )
+    value = generate_terrain(scene, layout, seed, macro_height=replanned_height)
+    preservation = validate_regional_detail_preserves_macro(replanned_height, value.height)
+    if preservation["macro_composition_preserved"]:
+        return value, replanned_height, preservation
+
+    fallback_feedback = {
+        "status": "FALLBACK",
+        "failures": ["regional_detail_replan_invalid", "generic_scene_plan_fallback"],
+        "metrics": preservation,
+    }
+    _record_terrain_retry(work, fallback_feedback)
+    _, fallback_height, _ = _fallback_macro_artifacts(
+        work, scene, labels, weights, region_ids, resolution,
+    )
+    value = generate_terrain(scene, layout, seed, macro_height=fallback_height)
+    preservation = validate_regional_detail_preserves_macro(fallback_height, value.height)
+    return value, fallback_height, preservation
 
 
 def _materialize_structural_agent_outputs(work: Path) -> Path:
@@ -244,6 +471,137 @@ class Pipeline:
     def _save_manifest(self):
         _json(self.run_dir / "run_manifest.json", self.manifest.model_dump(mode="json"))
 
+    def _write_mesh_reuse_manifest(self) -> None:
+        """Persist dependency-auditable mesh reuse decisions for this run.
+
+        Terrain/layout/structural outputs are always regenerated.  Unless a
+        caller supplies a verified cache record, no baseline mesh is claimed
+        as reused; this prevents directory-copy provenance from masquerading
+        as a cache hit.
+        """
+        baseline = os.getenv(
+            "WORLDCLAW_BASELINE_RUN",
+            "/mnt/data/v-huguangyu/worldclaw-oss/runs/live_forest_boundary_20260901_gate_v2",
+        )
+        def dependency_fingerprint(item: dict) -> str | None:
+            """Hash only explicit upstream inputs; missing inputs are unsafe."""
+            fields = (
+                "id", "category", "asset_type", "asset_role", "prompt", "appearance",
+                "reference_sha256", "reference_hash", "crop_sha256", "crop_hash",
+                "mask_sha256", "mask_hash", "bbox", "source_model", "model_id",
+                "model_revision", "revision", "inference_config", "validation_status",
+            )
+            selected = {key: item[key] for key in fields if key in item and item[key] not in (None, "")}
+            required = ("category", "asset_type", "prompt", "source_model")
+            if any(key not in selected for key in required):
+                return None
+            return hashlib.sha256(json.dumps(selected, sort_keys=True, ensure_ascii=False, default=str).encode()).hexdigest()
+
+        def missing_dependency_fields(item: dict) -> list[str]:
+            required = ("category", "asset_type", "prompt", "source_model")
+            return [field for field in required if item.get(field) in (None, "")]
+
+        def load_candidates(root: Path) -> list[dict]:
+            values: list[dict] = []
+            for filename in (
+                "asset_mesh_index.json", "assets.json", "placement_response.json",
+                "reconstruction_response.json", "environment_assets_response.json",
+            ):
+                path = root / "work" / filename
+                if not path.is_file():
+                    continue
+                try:
+                    value = json.loads(path.read_text(encoding="utf-8"))
+                except (OSError, json.JSONDecodeError):
+                    continue
+                items = value if isinstance(value, list) else value.get("assets", []) if isinstance(value, dict) else []
+                values.extend(item for item in items if isinstance(item, dict))
+            return values
+
+        # Build entries from the actual stage responses.  A live run does not
+        # necessarily produce the synthetic ``asset_mesh_index.json`` file,
+        # so relying on that one optional index silently under-reports meshes.
+        candidates = load_candidates(self.run_dir)
+        baseline_candidates = load_candidates(Path(baseline))
+        baseline_by_fingerprint: dict[str, dict] = {}
+        for item in baseline_candidates:
+            fingerprint = dependency_fingerprint(item)
+            mesh = item.get("mesh")
+            if fingerprint and mesh and Path(str(mesh)).is_file() and str(item.get("validation_status", "pass")).lower() in {"pass", "validated", "ok"}:
+                baseline_by_fingerprint[fingerprint] = item
+        grouped: dict[tuple[str, str], dict] = {}
+        for item in candidates:
+            mesh = item.get("mesh")
+            if not mesh:
+                continue
+            mesh_path = Path(str(mesh))
+            if not mesh_path.is_file():
+                continue
+            digest = sha256(mesh_path)
+            key = (str(mesh_path), digest)
+            entry = grouped.setdefault(key, {
+                "mesh": str(mesh_path), "mesh_sha256": digest,
+                "asset_ids": [], "categories": [], "source_models": [],
+            })
+            fingerprint = dependency_fingerprint(item)
+            if fingerprint:
+                entry["dependency_fingerprint"] = fingerprint
+                baseline_item = baseline_by_fingerprint.get(fingerprint)
+                if baseline_item:
+                    baseline_mesh = Path(str(baseline_item.get("mesh", "")))
+                    if baseline_mesh.is_file() and sha256(baseline_mesh) == digest:
+                        entry["baseline_match"] = {
+                            "mesh": str(baseline_mesh),
+                            "mesh_sha256": digest,
+                            "dependency_match": True,
+                        }
+            else:
+                missing = missing_dependency_fields(item)
+                entry.setdefault("missing_dependency_fields", [])
+                entry["missing_dependency_fields"] = sorted(set(entry["missing_dependency_fields"]) | set(missing))
+            for field, target in (("id", "asset_ids"), ("category", "categories"), ("source_model", "source_models")):
+                value = item.get(field)
+                if value is not None and str(value) not in entry[target]:
+                    entry[target].append(str(value))
+        regenerated = [
+            entry | {
+                "status": "regenerated",
+                "reason": (
+                    "missing dependency fields: " + ", ".join(entry.get("missing_dependency_fields", []))
+                    if entry.get("missing_dependency_fields")
+                    else "no verified baseline dependency-complete cache hit"
+                ),
+            }
+            for entry in sorted(grouped.values(), key=lambda value: value["mesh"])
+        ]
+        dependency_names = (
+            "scene_plan.json", "terrain_macro_plan.json", "layout_labels.npy",
+            "layout_weights.npy", "terrain_structural.npz", "structural_plan.json",
+        )
+        input_hashes = {
+            name: sha256(self.work / name) if (self.work / name).is_file() else None
+            for name in dependency_names
+        }
+        baseline_manifest = Path(baseline) / "mesh_reuse_manifest.json"
+        baseline_available = baseline_manifest.is_file()
+        eligible = [entry for entry in grouped.values() if entry.get("baseline_match")]
+        _json(self.run_dir / "mesh_reuse_manifest.json", {
+            "schema_version": "worldclaw-oss-mesh-reuse-v1",
+            "baseline_run": baseline,
+            "reused": [entry for entry in eligible if Path(entry["mesh"]).resolve() == Path(entry["baseline_match"]["mesh"]).resolve()],
+            "reuse_eligible": eligible,
+            "regenerated": regenerated,
+            "reason": {
+                "baseline_manifest_available": baseline_available,
+                "reused_count": len([entry for entry in eligible if Path(entry["mesh"]).resolve() == Path(entry["baseline_match"]["mesh"]).resolve()]),
+                "reuse_eligible_count": len(eligible),
+                "regenerated_count": len(regenerated),
+                "baseline_candidate_count": len(baseline_candidates),
+                "unverified_meshes": "entries without complete dependency fingerprints remain regenerated",
+            },
+            "input_hashes": input_hashes,
+        })
+
     def _work_file_state(self) -> dict[str, dict[str, object]]:
         """Return hashes and sizes for files currently in the stage work area."""
         state: dict[str, dict[str, object]] = {}
@@ -434,29 +792,161 @@ class Pipeline:
             return {"regions": len(value.regions)}
 
         def layout():
-            value = deterministic_layout(self._plan(), 128)
+            value = sample_layout(self._plan(), 128, seed=self.seed)
             np.save(self.work / "layout_labels.npy", value.labels)
             np.save(self.work / "layout_weights.npy", value.weights)
-            _json(self.work / "layout.json", {"region_ids": value.region_ids, "deterministic": True})
-            return {"resolution": 128}
+            _json(self.work / "layout_generation.json", value.generation)
+            _json(self.work / "layout.json", {
+                "region_ids": value.region_ids,
+                "deterministic": True,
+                "seed": self.seed,
+                "selected_candidate": value.generation["selected_candidate"],
+            })
+            return {
+                "resolution": 128,
+                "seed": self.seed,
+                "candidate_count": value.generation["candidate_count"],
+                "selected_candidate": value.generation["selected_candidate"],
+            }
+
+        def terrain_macro_plan():
+            layout_labels = np.load(self.work / "layout_labels.npy")
+            layout_weights = np.load(self.work / "layout_weights.npy")
+            layout_summary = summarize_layout(layout_labels, layout_weights, tuple(r.id for r in self._plan().regions))
+            planner_input = self.work / "terrain_planner_input"
+            planner_input.mkdir(exist_ok=True)
+            shutil.copy2(self.work / "intent.json", planner_input / "intent.json")
+            shutil.copy2(self.work / "scene_plan.json", planner_input / "scene_plan.json")
+            layout_dir = planner_input / "layout"
+            masks_dir = layout_dir / "masks"
+            masks_dir.mkdir(parents=True, exist_ok=True)
+            np.save(layout_dir / "layout_labels.npy", layout_labels)
+            np.save(layout_dir / "layout_weights.npy", layout_weights)
+            for index, region in enumerate(self._plan().regions):
+                safe_id = str(region.id).replace("/", "_").replace("\\", "_")
+                np.save(masks_dir / f"{safe_id}.npy", layout_labels == index)
+            _json(planner_input / "world_spec.json", {"world_size_m": list(self._plan().world_size_m)})
+            _json(planner_input / "terrain_constraints.json", {"explicit_constraints": self._plan().explicit_constraints})
+            _json(planner_input / "structural_intents.json", {"status": "pending", "source": "structural branch follows terrain"})
+            plan = derive_macro_plan(self._plan())
+            _json(self.work / "terrain_macro_plan.json", plan.model_dump(mode="json", exclude_none=True))
+            terrain_root = self.work / "terrain"
+            terrain_root.mkdir(exist_ok=True)
+            shutil.copy2(self.work / "terrain_macro_plan.json", terrain_root / "terrain_macro_plan.json")
+            return {"landforms": len(plan.landforms), "functional_zones": len(plan.functional_zones), "planner": "semantic_composition"}
+
+        def terrain_macro_generate():
+            macro = TerrainMacroPlan.model_validate_json((self.work / "terrain_macro_plan.json").read_text(encoding="utf-8"))
+            height = generate_macro_height(
+                macro, 128, layout_weights=np.load(self.work / "layout_weights.npy"),
+                region_ids=tuple(r.id for r in self._plan().regions),
+            )
+            vertices, triangles = macro_vertices(height, macro.world_size_m, macro)
+            np.save(self.work / "macro_height.npy", height)
+            terrain_root = self.work / "terrain"
+            terrain_root.mkdir(exist_ok=True)
+            shutil.copy2(self.work / "macro_height.npy", terrain_root / "macro_height.npy")
+            metrics = validate_macro_height(
+                height, macro, np.load(self.work / "layout_labels.npy"),
+                np.load(self.work / "layout_weights.npy"),
+                tuple(r.id for r in self._plan().regions),
+            )
+            _json(self.work / "terrain_macro_validation.json", metrics)
+            _json(self.work / "terrain_frequency.json", {"macro": {"scale_m": [50, 150], "source": "terrain_macro_plan.json", "share": "70-90%"}, "regional": {"scale_m": [5, 30], "source": "terrain.py regional operators", "share": "10-30%"}, "micro": {"scale_m": [0.2, 5], "source": "material/displacement operators", "share": "surface detail"}})
+            write_validation_bundle(self.work / "terrain_validation", height, np.load(self.work / "layout_labels.npy"), metrics)
+            shutil.copytree(self.work / "terrain_validation", terrain_root / "validation", dirs_exist_ok=True)
+            if not metrics.get("valid"):
+                feedback = {
+                    "status": "REPLAN",
+                    "failures": [key for key in (
+                        "lake_basin_containment", "trail_traversability",
+                        "macro_composition_preserved", "terrain_spikes",
+                    ) if not metrics.get(key, True)],
+                    "metrics": metrics,
+                }
+                _record_terrain_retry(self.work, feedback)
+                macro, height, metrics = _replan_macro_artifacts(
+                    self.work, np.load(self.work / "layout_labels.npy"),
+                    np.load(self.work / "layout_weights.npy"),
+                    tuple(r.id for r in self._plan().regions), 128, feedback,
+                )
+                if not metrics.get("valid"):
+                    feedback["metrics"] = metrics
+                    feedback["failures"].append("targeted_replan_invalid")
+                    _record_terrain_retry(self.work, feedback)
+                    macro, height, metrics = _fallback_macro_artifacts(
+                        self.work, self._plan(),
+                        np.load(self.work / "layout_labels.npy"),
+                        np.load(self.work / "layout_weights.npy"),
+                        tuple(r.id for r in self._plan().regions), 128,
+                    )
+                if not metrics.get("valid"):
+                    raise ValueError(f"macro terrain validation failed after bounded Macro Replan: {metrics}")
+            return {"resolution": 128, "global_relief": float(height.max() - height.min())}
+
+        def terrain_visual_validate():
+            metrics = json.loads((self.work / "terrain_macro_validation.json").read_text(encoding="utf-8"))
+            result = visual_validate_terrain(self.work / "terrain_validation", metrics)
+            if result["status"] == "REPLAN":
+                macro = TerrainMacroPlan.model_validate_json((self.work / "terrain_macro_plan.json").read_text(encoding="utf-8"))
+                macro = replan_macro_plan(macro, result)
+                _json(self.work / "terrain_macro_plan.json", macro.model_dump(mode="json", exclude_none=True))
+                height = generate_macro_height(
+                    macro, 128, layout_weights=np.load(self.work / "layout_weights.npy"),
+                    region_ids=tuple(r.id for r in self._plan().regions),
+                )
+                np.save(self.work / "macro_height.npy", height)
+                metrics = validate_macro_height(
+                    height, macro, np.load(self.work / "layout_labels.npy"),
+                    np.load(self.work / "layout_weights.npy"),
+                    tuple(r.id for r in self._plan().regions),
+                )
+                _json(self.work / "terrain_macro_validation.json", metrics)
+                write_validation_bundle(self.work / "terrain_validation", height, np.load(self.work / "layout_labels.npy"), metrics)
+            result = visual_validate_terrain(self.work / "terrain_validation", metrics)
+            _json(self.work / "terrain_visual_validation.json", result)
+            if result["status"] != "PASS":
+                raise ValueError(result)
+            return result
 
         def terrain():
             from .layout import LayoutResult
             plan_value = self._plan()
             labels = np.load(self.work / "layout_labels.npy")
             weights = np.load(self.work / "layout_weights.npy")
-            value = generate_terrain(
-                plan_value,
-                LayoutResult(labels, weights, tuple(r.id for r in plan_value.regions)),
-                stable_seed(self.prompt, self.seed),
+            region_ids = tuple(r.id for r in plan_value.regions)
+            macro_height = np.load(self.work / "macro_height.npy")
+            value, macro_height, macro_preservation = _recover_regional_detail(
+                self.work, plan_value, LayoutResult(labels, weights, region_ids),
+                labels, weights, region_ids, stable_seed(self.prompt, self.seed),
+                macro_height,
             )
             np.savez_compressed(
                 self.work / "terrain.npz",
                 height=value.height, vertices=value.vertices, triangles=value.triangles,
             )
+            _json(self.work / "terrain_regional_validation.json", macro_preservation)
+            if not macro_preservation["macro_composition_preserved"]:
+                raise ValueError(f"regional detail damaged macro composition: {macro_preservation}")
+            terrain_root = self.work / "terrain"
+            terrain_root.mkdir(exist_ok=True)
+            shutil.copy2(self.work / "terrain.npz", terrain_root / "terrain.npz")
+            _write_terrain_blend(self.work)
+            (terrain_root / "logs").mkdir(exist_ok=True)
+            history_path = terrain_root / "logs" / "terrain_retry_history.json"
+            try:
+                history = json.loads(history_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                history = {"strategy": "macro_plan_replan", "seed_changes": 0, "attempts": []}
+            history.setdefault("strategy", "macro_plan_replan")
+            history.setdefault("seed_changes", 0)
+            history.setdefault("attempts", [])
+            history["attempt"] = len(history["attempts"])
+            _json(history_path, history)
             return {
                 "vertices": len(value.vertices),
                 "boundary_max_delta": boundary_discontinuity(value.height, labels),
+                "macro_composition_preserved": macro_preservation["macro_composition_preserved"],
             }
 
         def structural_input():
@@ -570,21 +1060,7 @@ class Pipeline:
                                 delta = (chunk[:, None, :] - points[None, :, :]) * spacing
                                 distances[chunk[:, 0], chunk[:, 1]] = np.sqrt(np.sum(delta * delta, axis=2)).min(axis=1)
                             probabilities *= np.exp(-distances / max(falloff, 1e-3))
-                    sx = 2.0 if spec.category in ("house", "cabin", "building") else 1.0
-                    sy = sx
-                    candidate_cells = []
-                    for item in np.argwhere(gate).tolist():
-                        if probabilities[item[0], item[1]] <= 1e-6:
-                            continue
-                        iy, ix = item
-                        x = -width / 2 + ix * width / (labels.shape[1] - 1)
-                        y = -depth / 2 + iy * depth / (labels.shape[0] - 1)
-                        footprint = (x - sx / 2, y - sy / 2, x + sx / 2, y + sy / 2)
-                        if footprint_satisfies_requirements(
-                            footprint, requirements, surface_masks, (width, depth)
-                        ):
-                            candidate_cells.append(item)
-                    candidates = candidate_cells
+                    candidates = [item for item in np.argwhere(gate).tolist() if probabilities[item[0], item[1]] > 1e-6]
                     candidates.sort(key=lambda item: -math.log(max(rng.random(), 1e-12)) / max(float(probabilities[item[0], item[1]]), 1e-6))
                     cursor = 0
                     for index in range(spec.count):
@@ -595,6 +1071,7 @@ class Pipeline:
                         x = -width / 2 + ix * width / (labels.shape[1] - 1)
                         y = -depth / 2 + iy * depth / (labels.shape[0] - 1)
                         z = float(height[iy, ix])
+                        sx = 2.0 if spec.category in ("house", "cabin", "building") else 1.0
                         sy = sx
                         sz = 4.0 if spec.category in ("tree", "palm") else (5.0 if spec.category == "castle" else 2.0)
                         asset_id = f"{region.id}_{spec.category}_{index:03d}"
@@ -746,6 +1223,7 @@ class Pipeline:
             return result
 
         def validate():
+            self._write_mesh_reuse_manifest()
             labels = np.load(self.work / "layout_labels.npy")
             terrain_path = self.work / "terrain_structural.npz"
             height = np.load(terrain_path if terrain_path.exists() else self.work / "terrain.npz")["height"]
@@ -781,7 +1259,9 @@ class Pipeline:
             return report
 
         return {
-            Stage.INTENT: intent, Stage.PLAN: plan, Stage.LAYOUT: layout, Stage.TERRAIN: terrain,
+            Stage.INTENT: intent, Stage.PLAN: plan, Stage.LAYOUT: layout,
+            Stage.TERRAIN_MACRO_PLAN: terrain_macro_plan, Stage.TERRAIN_MACRO_GENERATE: terrain_macro_generate,
+            Stage.TERRAIN: terrain, Stage.TERRAIN_VISUAL_VALIDATE: terrain_visual_validate,
             Stage.STRUCTURAL_INPUT: structural_input,
             Stage.STRUCTURAL_REPLAN: structural_replan,
             Stage.STRUCTURAL_GENERATE: structural_generate,
@@ -852,25 +1332,199 @@ class Pipeline:
             return {"validated": True}
 
         def layout():
-            value = deterministic_layout(self._plan(), 512)
+            value = sample_layout(self._plan(), 512, seed=self.seed)
             np.save(self.work / "layout_labels.npy", value.labels)
             np.save(self.work / "layout_weights.npy", value.weights)
-            return {"resolution": 512}
+            _json(self.work / "layout_generation.json", value.generation)
+            _json(self.work / "layout.json", {
+                "region_ids": value.region_ids,
+                "deterministic": True,
+                "seed": self.seed,
+                "selected_candidate": value.generation["selected_candidate"],
+            })
+            return {
+                "resolution": 512,
+                "seed": self.seed,
+                "candidate_count": value.generation["candidate_count"],
+                "selected_candidate": value.generation["selected_candidate"],
+            }
+
+        def terrain_macro_plan():
+            # The live GPT planner can provide this same schema; the generic
+            # semantic derivation is a deterministic fallback when the
+            # optional terrain-planner endpoint is unavailable.
+            layout_labels = np.load(self.work / "layout_labels.npy")
+            layout_weights = np.load(self.work / "layout_weights.npy")
+            layout_summary = summarize_layout(layout_labels, layout_weights, tuple(r.id for r in self._plan().regions))
+            planner_input = self.work / "terrain_planner_input"
+            planner_input.mkdir(exist_ok=True)
+            shutil.copy2(self.work / "intent.json", planner_input / "intent.json")
+            shutil.copy2(self.work / "scene_plan.json", planner_input / "scene_plan.json")
+            layout_dir = planner_input / "layout"
+            masks_dir = layout_dir / "masks"
+            masks_dir.mkdir(parents=True, exist_ok=True)
+            np.save(layout_dir / "layout_labels.npy", layout_labels)
+            np.save(layout_dir / "layout_weights.npy", layout_weights)
+            for index, region in enumerate(self._plan().regions):
+                safe_id = str(region.id).replace("/", "_").replace("\\", "_")
+                np.save(masks_dir / f"{safe_id}.npy", layout_labels == index)
+            _json(planner_input / "world_spec.json", {"world_size_m": list(self._plan().world_size_m)})
+            _json(planner_input / "terrain_constraints.json", {"explicit_constraints": self._plan().explicit_constraints})
+            _json(planner_input / "structural_intents.json", {"status": "pending", "source": "structural branch follows terrain"})
+            plan, planner_meta = TerrainMacroPlanner(planner_adapter(), self._runtime_records()["planner"]).plan(
+                self._plan(), self.seed, layout_summary=layout_summary,
+                planner_context=_terrain_planner_context(self.work, self._plan(), layout_summary),
+                request_path=self.work / "terrain_macro_planner_request.json",
+                response_path=self.work / "terrain_macro_planner_response.json",
+            )
+            _json(self.work / "terrain_macro_plan.json", plan.model_dump(mode="json", exclude_none=True))
+            terrain_root = self.work / "terrain"
+            terrain_root.mkdir(exist_ok=True)
+            shutil.copy2(self.work / "terrain_macro_plan.json", terrain_root / "terrain_macro_plan.json")
+            return {"landforms": len(plan.landforms), "functional_zones": len(plan.functional_zones), "planner": planner_meta}
+
+        def terrain_macro_generate():
+            macro = TerrainMacroPlan.model_validate_json((self.work / "terrain_macro_plan.json").read_text(encoding="utf-8"))
+            height = generate_macro_height(
+                macro, 512, layout_weights=np.load(self.work / "layout_weights.npy"),
+                region_ids=tuple(r.id for r in self._plan().regions),
+            )
+            np.save(self.work / "macro_height.npy", height)
+            terrain_root = self.work / "terrain"
+            terrain_root.mkdir(exist_ok=True)
+            shutil.copy2(self.work / "macro_height.npy", terrain_root / "macro_height.npy")
+            metrics = validate_macro_height(
+                height, macro, np.load(self.work / "layout_labels.npy"),
+                np.load(self.work / "layout_weights.npy"),
+                tuple(r.id for r in self._plan().regions),
+            )
+            _json(self.work / "terrain_macro_validation.json", metrics)
+            _json(self.work / "terrain_frequency.json", {"macro": {"scale_m": [50, 150], "source": "terrain_macro_plan.json", "share": "70-90%"}, "regional": {"scale_m": [5, 30], "source": "terrain.py regional operators", "share": "10-30%"}, "micro": {"scale_m": [0.2, 5], "source": "material/displacement operators", "share": "surface detail"}})
+            write_validation_bundle(self.work / "terrain_validation", height, np.load(self.work / "layout_labels.npy"), metrics)
+            shutil.copytree(self.work / "terrain_validation", terrain_root / "validation", dirs_exist_ok=True)
+            if not metrics.get("valid"):
+                feedback = {
+                    "status": "REPLAN",
+                    "failures": [key for key in (
+                        "lake_basin_containment", "trail_traversability",
+                        "macro_composition_preserved", "terrain_spikes",
+                    ) if not metrics.get(key, True)],
+                    "metrics": metrics,
+                }
+                _record_terrain_retry(self.work, feedback)
+                macro, height, metrics = _replan_macro_artifacts(
+                    self.work, np.load(self.work / "layout_labels.npy"),
+                    np.load(self.work / "layout_weights.npy"),
+                    tuple(r.id for r in self._plan().regions), 512, feedback,
+                )
+                if not metrics.get("valid"):
+                    feedback["metrics"] = metrics
+                    feedback["failures"].append("targeted_replan_invalid")
+                    _record_terrain_retry(self.work, feedback)
+                    macro, height, metrics = _fallback_macro_artifacts(
+                        self.work, self._plan(),
+                        np.load(self.work / "layout_labels.npy"),
+                        np.load(self.work / "layout_weights.npy"),
+                        tuple(r.id for r in self._plan().regions), 512,
+                    )
+                if not metrics.get("valid"):
+                    raise ValueError(f"macro terrain validation failed after bounded Macro Replan: {metrics}")
+            return {"resolution": 512, "global_relief": float(height.max() - height.min())}
+
+        def terrain_visual_validate():
+            metrics = json.loads((self.work / "terrain_macro_validation.json").read_text(encoding="utf-8"))
+            labels = np.load(self.work / "layout_labels.npy")
+            weights = np.load(self.work / "layout_weights.npy")
+            layout_summary = summarize_layout(labels, weights, tuple(r.id for r in self._plan().regions))
+            result = visual_validate_terrain(
+                self.work / "terrain_validation", metrics,
+                client=planner_adapter(), model=self._runtime_records()["planner"], seed=self.seed,
+                scene_plan=self._plan().model_dump(mode="json", exclude_none=True),
+                layout_summary=layout_summary,
+                request_path=self.work / "terrain_visual_validation_request.json",
+                response_path=self.work / "terrain_visual_validation_response.json",
+            )
+            if result["status"] == "REPLAN":
+                labels = np.load(self.work / "layout_labels.npy")
+                weights = np.load(self.work / "layout_weights.npy")
+                region_ids = tuple(r.id for r in self._plan().regions)
+                feedback = {
+                    "status": "REPLAN",
+                    "failures": result.get("failures", ["terrain_visual_validation"]),
+                    "recommendations": result.get("recommendations", []),
+                    "metrics": metrics,
+                }
+                _record_terrain_retry(self.work, feedback)
+                current_macro = TerrainMacroPlan.model_validate_json(
+                    (self.work / "terrain_macro_plan.json").read_text(encoding="utf-8")
+                )
+                replanner = TerrainMacroPlanner(
+                    planner_adapter(), self._runtime_records()["planner"]
+                )
+                replanned, replan_meta = replanner.replan(
+                    self._plan(), current_macro, feedback, seed=self.seed,
+                    layout_summary=layout_summary,
+                    planner_context=_terrain_planner_context(self.work, self._plan(), layout_summary),
+                    request_path=self.work / "terrain_macro_replan_request.json",
+                    response_path=self.work / "terrain_macro_replan_response.json",
+                )
+                _json(self.work / "terrain_macro_replan.json", replan_meta)
+                _, height, metrics = _replan_macro_artifacts(
+                    self.work, labels, weights, region_ids,
+                    int(np.load(self.work / "macro_height.npy").shape[0]), feedback,
+                    replanned_plan=replanned,
+                )
+                result = visual_validate_terrain(
+                    self.work / "terrain_validation", metrics,
+                    client=planner_adapter(), model=self._runtime_records()["planner"], seed=self.seed,
+                    scene_plan=self._plan().model_dump(mode="json", exclude_none=True),
+                    layout_summary=layout_summary,
+                    request_path=self.work / "terrain_visual_validation_request.json",
+                    response_path=self.work / "terrain_visual_validation_response.json",
+                )
+            _json(self.work / "terrain_visual_validation.json", result)
+            if result["status"] != "PASS":
+                raise ValueError(result)
+            return result
 
         def terrain():
             from .layout import LayoutResult
             plan_value = self._plan()
             labels = np.load(self.work / "layout_labels.npy")
             weights = np.load(self.work / "layout_weights.npy")
-            value = generate_terrain(
-                plan_value, LayoutResult(labels, weights, tuple(r.id for r in plan_value.regions)),
-                stable_seed(self.prompt, self.seed),
+            region_ids = tuple(r.id for r in plan_value.regions)
+            macro_height = np.load(self.work / "macro_height.npy")
+            value, macro_height, macro_preservation = _recover_regional_detail(
+                self.work, plan_value, LayoutResult(labels, weights, region_ids),
+                labels, weights, region_ids, stable_seed(self.prompt, self.seed),
+                macro_height,
             )
             np.savez_compressed(
                 self.work / "terrain.npz",
                 height=value.height, vertices=value.vertices, triangles=value.triangles,
             )
-            return {"vertices": len(value.vertices)}
+            _json(self.work / "terrain_regional_validation.json", macro_preservation)
+            if not macro_preservation["macro_composition_preserved"]:
+                raise ValueError(f"regional detail damaged macro composition: {macro_preservation}")
+            terrain_root = self.work / "terrain"
+            terrain_root.mkdir(exist_ok=True)
+            shutil.copy2(self.work / "terrain.npz", terrain_root / "terrain.npz")
+            _write_terrain_blend(self.work)
+            (terrain_root / "logs").mkdir(exist_ok=True)
+            history_path = terrain_root / "logs" / "terrain_retry_history.json"
+            try:
+                history = json.loads(history_path.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                history = {"strategy": "macro_plan_replan", "seed_changes": 0, "attempts": []}
+            history.setdefault("strategy", "macro_plan_replan")
+            history.setdefault("seed_changes", 0)
+            history.setdefault("attempts", [])
+            history["attempt"] = len(history["attempts"])
+            _json(history_path, history)
+            return {
+                "vertices": len(value.vertices),
+                "macro_composition_preserved": macro_preservation["macro_composition_preserved"],
+            }
 
         def structural_input():
             plan = self._plan().model_dump(mode="json", exclude_none=True)
@@ -1231,6 +1885,7 @@ class Pipeline:
             return result
 
         def validate():
+            self._write_mesh_reuse_manifest()
             report = _merge_structural_validation_metrics(
                 self.run_dir, validate_run(self.run_dir, full=self._render_profile() == "full")
             )
@@ -1240,7 +1895,9 @@ class Pipeline:
             return report
 
         return {
-            Stage.INTENT: planning, Stage.PLAN: plan, Stage.LAYOUT: layout, Stage.TERRAIN: terrain,
+            Stage.INTENT: planning, Stage.PLAN: plan, Stage.LAYOUT: layout,
+            Stage.TERRAIN_MACRO_PLAN: terrain_macro_plan, Stage.TERRAIN_MACRO_GENERATE: terrain_macro_generate,
+            Stage.TERRAIN: terrain, Stage.TERRAIN_VISUAL_VALIDATE: terrain_visual_validate,
             Stage.STRUCTURAL_INPUT: structural_input,
             Stage.STRUCTURAL_REPLAN: structural_replan,
             Stage.STRUCTURAL_GENERATE: structural_generate,

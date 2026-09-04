@@ -156,6 +156,10 @@ class OpenAIClient:
             api_key=self.config.api_key,
             base_url=self.config.base_url,
             timeout=self.config.timeout_seconds,
+            # Pipeline stages own bounded retries and persist each attempt.
+            # Disable the SDK's hidden retries so a provider timeout cannot
+            # multiply the stage budget without an auditable event.
+            max_retries=0,
             default_headers={"User-Agent": "WorldClaw/1.0"},
         )
 

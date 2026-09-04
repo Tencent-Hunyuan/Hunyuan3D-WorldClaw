@@ -70,6 +70,60 @@ inventing density; "a trail" becomes category trail and instance_strategy path;
 Keep appearance for visual descriptors such as species, color, or material.
 Return JSON only, without Markdown."""
 
+TERRAIN_MACRO_PLANNER_SYSTEM = """You are the Terrain Macro Planner. Convert the
+provided ScenePlan and layout summary into a TerrainMacroPlan. Select only the
+executable primitive vocabulary: hill, ridge, valley, basin, plateau, bench,
+saddle, cliff, terrace, channel, depression, coastal_slope. Describe low-
+frequency composition, spatial/elevation relationships, and functional zones
+for downstream placement. Do not emit pixels, height arrays, noise settings,
+or scene-name-specific rules. Every landform must have executable geometry and
+every numeric value must be derived from the supplied world size or regions.
+Return strict JSON only."""
+
+TERRAIN_MACRO_REPLAN_SYSTEM = """You are the Terrain Macro Replan Agent. Produce a
+complete executable TerrainMacroPlan after reviewing the original terrain
+planning inputs, the current Macro Plan, and visual validation feedback.
+If the input contains one or more `response.json` entries under
+`hard_constraints.response_json`, those entries are hard constraints, not
+optional advice: every listed failure and recommendation must be addressed by
+the replacement plan. Do not omit, reinterpret, or downgrade them, and do not
+return a plan that knowingly preserves a reported defect.
+Preserve the ScenePlan's semantic regions, functional relationships, world
+size, and explicit requirements. Correct every supplied failure and apply the
+recommendations, especially when they identify overly regular geometry,
+straight channels, hard region boundaries, poor semantic alignment, or
+unusable slopes. Use irregular polygons and multi-point control lines when the
+feedback requires natural shorelines or meandering rivers. Do not emit pixels,
+height arrays, scene objects, or implementation code. Return strict JSON only
+matching the TerrainMacroPlan schema."""
+
+TERRAIN_VISUAL_VALIDATOR_SYSTEM = """You are the Terrain Base-Stage Visual Validator.
+Review the supplied base-terrain diagnostic renders, macro plan summary, and
+deterministic metrics. Decide PASS or REPLAN only for defects that belong to
+this stage: non-finite or missing terrain, gross height discontinuities,
+pathological spikes, unusable global bounds, or regional detail that destroys
+the continuity of the base surface.
+
+This is intentionally a neutral, featureless or gently varying base terrain.
+Do not require broad hills, dramatic relief, a wilderness silhouette, or a
+visually rich forest composition. Layout regions may also be block-like in the
+overlay; do not call that a terrain defect when the height surface is
+continuous and the deterministic boundary metrics pass.
+
+Lake and river geometry is generated again by the downstream Structural stage:
+it carves lake basins and river beds and then creates water meshes. Therefore
+do not fail or recommend REPLAN because lakes or rivers are not visible,
+isolated, oval, straight, disconnected, lack natural shorelines, or do not yet
+match their final topology in these base-terrain renders. Do not evaluate
+final water connectivity, shoreline appearance, cabin/trail placement, or
+downstream asset relationships here. Those checks belong to Structural and
+later validation stages.
+
+Use the deterministic metrics as evidence, but treat downstream-only metrics
+such as lake basin containment and final water topology as advisory at this
+stage. Return strict JSON with status, failures, and targeted recommendations
+only."""
+
 REPAIR_SYSTEM = """Repair the candidate JSON so it validates against the supplied
 JSON Schema. Preserve the user constraints and return the complete corrected JSON
 only. Apply every reported error, including cross-field constraints: every

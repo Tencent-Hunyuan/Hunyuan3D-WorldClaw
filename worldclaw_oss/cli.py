@@ -10,6 +10,9 @@ from .schemas import RunManifest
 from .validation import validate_run
 
 
+DEFAULT_LIVE_PROMPT_FILE = Path(__file__).resolve().parents[1] / "prompts" / "forest_lake.txt"
+
+
 def parser() -> argparse.ArgumentParser:
     value = argparse.ArgumentParser(
         prog="python -m worldclaw_oss",
@@ -17,7 +20,10 @@ def parser() -> argparse.ArgumentParser:
     )
     sub = value.add_subparsers(dest="command", required=True)
     generate = sub.add_parser("generate")
-    generate.add_argument("--prompt-file", type=Path, required=True)
+    generate.add_argument(
+        "--prompt-file", type=Path,
+        help="prompt file (defaults to prompts/forest_lake.txt for live runs)",
+    )
     generate.add_argument("--seed", type=int, default=42)
     generate.add_argument("--output", type=Path)
     generate.add_argument("--mode", choices=("live", "synthetic"), default="live")
@@ -41,7 +47,14 @@ def main(argv=None):
         print(json.dumps(report, indent=2))
         raise SystemExit(0 if report["valid"] else 1)
     if args.command == "generate":
-        prompt = args.prompt_file.read_text(encoding="utf-8").strip()
+        prompt_file = args.prompt_file
+        if prompt_file is None:
+            if args.mode != "live":
+                raise SystemExit("--prompt-file is required for synthetic runs")
+            prompt_file = DEFAULT_LIVE_PROMPT_FILE
+        if not prompt_file.is_file():
+            raise SystemExit(f"prompt file does not exist: {prompt_file}")
+        prompt = prompt_file.read_text(encoding="utf-8").strip()
         output = args.output or Path("runs") / new_run_id(prompt)
         pipe = Pipeline(
             output, args.models_lock, args.mode, args.seed, prompt,

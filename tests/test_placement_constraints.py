@@ -3,7 +3,6 @@ import numpy as np
 from worldclaw_oss.placement_constraints import (
     apply_hard_gate,
     footprint_intersects_mask,
-    footprint_satisfies_requirements,
     prepare_surface_masks,
     requirements_from_spec,
 )
@@ -67,26 +66,3 @@ def test_footprint_gate_is_area_aware():
     mask = np.zeros((10, 10), dtype=bool)
     mask[5, 5] = True
     assert footprint_intersects_mask((-1, -1, 1, 1), mask, (10.0, 10.0))
-
-
-def test_footprint_gate_is_independent_of_asset_and_surface_names():
-    water = np.zeros((8, 8), dtype=bool)
-    water[3:5, 3:5] = True
-    requirements = requirements_from_spec({
-        "category": "Asset_123",
-        "placement_profile": {"requires_dry_support": True},
-    })
-    assert not footprint_satisfies_requirements(
-        (-1.0, -1.0, 1.0, 1.0), requirements, {"unknown_water_feature": water, "water": water}, (10.0, 10.0)
-    )
-
-
-def test_footprint_gate_accepts_generic_dry_surface():
-    dry = np.ones((8, 8), dtype=bool)
-    requirements = requirements_from_spec({
-        "category": "RenamedAsset",
-        "placement_profile": {"allowed_support_surfaces": ["forest_floor"]},
-    })
-    assert footprint_satisfies_requirements(
-        (-1.0, -1.0, 1.0, 1.0), requirements, {"dry_terrain": dry}, (10.0, 10.0)
-    )

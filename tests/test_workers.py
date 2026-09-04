@@ -8,8 +8,10 @@ from PIL import Image
 
 from workers.hunyuan3d_worker import generate_mesh
 import workers.mesh_validation_worker as mesh_validation_worker
+from workers.common import parse_defect_report
 from workers.mesh_validation_worker import (
     _coerce_report,
+    _contact_sheet,
     _make_fallback_asset,
     _mesh_metrics,
     _mesh_sha256,
@@ -51,6 +53,21 @@ def test_mask_deduplication_is_category_aware():
     assert [(item["category"], item["score"]) for item in kept] == [
         ("tree", 0.9), ("rock", 0.8)
     ]
+
+
+def test_refinement_report_coerces_compatible_vlm_fields():
+    report = parse_defect_report({
+        "defects": [
+            {"kind": "texture", "severity": "variable", "count": 4,
+             "affected_assets": ["tree_0001"], "action": "inspect material"},
+            "visible issue",
+        ],
+        "acceptable": False,
+    })
+    assert report.acceptable is False
+    assert [item.kind for item in report.defects] == ["texture", "other"]
+    assert report.defects[0].severity == 0.5
+    assert report.defects[0].recommendation == "inspect material"
 
 
 def test_terrain_sampler_and_contact():
@@ -120,6 +137,33 @@ def test_scatter_does_not_reuse_cabin_mesh_for_other_solid_categories(tmp_path):
     assert [asset["category"] for asset in assets] == ["cabins"]
     skipped = [item for item in diagnostics if item.get("category") == "forest_rocks"]
     assert skipped and skipped[0]["placement"] == "skipped_no_validated_prototype"
+
+
+def test_dense_profile_allows_canopy_overlap_for_requested_count(tmp_path):
+    trimesh = pytest.importorskip("trimesh")
+    tree_mesh = tmp_path / "tree.glb"
+    trimesh.creation.box(extents=[1.0, 1.0, 1.0]).export(tree_mesh, file_type="glb")
+    plan = {
+        "world_size_m": [20.0, 20.0],
+        "regions": [{
+            "id": "forest", "center": {"x": 0.0, "y": 0.0},
+            "objects": [{
+                "category": "tree", "asset_type": "reusable_prototype", "count": 20,
+                "density": "dense", "placement_profile": {"footprint_overlap_threshold": 0.15},
+            }],
+        }],
+    }
+    labels = np.zeros((32, 32), dtype=np.int16)
+    height = np.zeros((32, 32), dtype=np.float32)
+    sample = terrain_sampler(height, (20.0, 20.0))
+    prototypes = [{
+        "id": "tree", "category": "tree", "asset_type": "reusable_prototype",
+        "mesh": str(tree_mesh), "source_image": "synthetic://tree", "model": {"model_id": "test"},
+    }]
+    assets, _ = scatter_environment(
+        prototypes, plan, labels, height, sample, 42, 0.05, tmp_path / "placement"
+    )
+    assert len(assets) == 20
 
 
 def test_gltf_vertices_convert_y_up_to_internal_z_up():
@@ -205,6 +249,19 @@ def test_mesh_validation_report_keeps_failure_and_final_status_separate():
     assert report["status"] == "fail"
     report["final_status"] = "dropped"
     assert report["final_status"] == "dropped"
+
+
+def test_mesh_validation_contact_sheet_keeps_all_views(tmp_path):
+    views = []
+    for index in range(8):
+        path = tmp_path / f"view_{index:02d}.png"
+        Image.new("RGB", (64, 32), (index * 20, 40, 80)).save(path)
+        views.append(path)
+    sheet = _contact_sheet(views)
+    assert sheet.is_file()
+    with Image.open(sheet) as image:
+        assert image.size == (1280, 640)
+        assert image.format == "JPEG"
 
 
 def test_mesh_validation_coerces_text_severity():

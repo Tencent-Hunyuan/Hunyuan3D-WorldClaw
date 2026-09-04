@@ -19,7 +19,7 @@ from worldclaw_oss.asset_types import AssetType
 from worldclaw_oss.geometry import cropped_intrinsics, gltf_vertices_to_z_up, pixel_ray, projected_bbox_scale
 from worldclaw_oss.placement_constraints import (
     apply_hard_gate,
-    footprint_satisfies_requirements,
+    footprint_intersects_mask,
     prepare_surface_masks,
     requirements_from_spec,
 )
@@ -432,12 +432,28 @@ def scatter_environment(
                 distance = distance_fields.get(surface_name)
                 if distance is not None:
                     sampling_weight *= np.exp(-distance / max(falloff, 1e-3))
-            candidates = [item for item in candidates if sampling_weight[item[0], item[1]] > 1e-6]
+            # Distance preferences are a soft sampling signal, not another
+            # hard support constraint.  A narrow falloff can make almost all
+            # otherwise valid cells numerically tiny; dropping those cells
+            # would turn a preference into an accidental capacity limit.  If
+            # the weighted subset cannot satisfy the requested count, retain
+            # every hard-gate cell and let the weight only affect ordering.
+            weighted_candidates = [
+                item for item in candidates
+                if sampling_weight[item[0], item[1]] > 1e-6
+            ]
+            # Keep a broad enough pool for high-count scatter jobs.  A pool
+            # that barely exceeds the requested count can still collapse to
+            # one narrow preference band after footprint checks.
+            required_candidate_pool = max(int(spec["count"]) * 4, 256)
+            if len(weighted_candidates) >= required_candidate_pool:
+                candidates = weighted_candidates
+            else:
+                candidates = np.argwhere(gate).tolist()
             if not candidates:
                 # Preserve a deterministic nearest-feasible fallback for
                 # degenerate planner regions while retaining soft weighting.
                 candidates = np.argwhere(gate).tolist()
-                candidates.sort(key=lambda item: -float(sampling_weight[item[0], item[1]]))
             candidates.sort(key=lambda item: -math.log(max(rng.random(), 1e-12)) / max(float(sampling_weight[item[0], item[1]]), 1e-6))
             placed = 0
             attempts = 0
@@ -461,16 +477,33 @@ def scatter_environment(
                     float(bounds[:, 0].min()), float(bounds[:, 1].min()),
                     float(bounds[:, 0].max()), float(bounds[:, 1].max()),
                 )
-                if not footprint_satisfies_requirements(
-                    footprint, requirements, surface_masks, world_size
+                forbidden = set(requirements.forbidden_support_surfaces)
+                if requirements.requires_dry_support:
+                    forbidden.add("water")
+                if requirements.avoid_structural_exclusion:
+                    forbidden.add("structural_exclusion")
+                if any(
+                    name in surface_masks and footprint_intersects_mask(footprint, surface_masks[name], world_size)
+                    for name in forbidden
                 ):
+                    continue
+                required = [surface_masks[name] for name in requirements.required_support_surfaces if name in surface_masks]
+                if required and not any(footprint_intersects_mask(footprint, mask, world_size) for mask in required):
                     continue
                 # Overlap tolerance is a placement requirement.  Density is a
                 # generic distribution modifier and remains only the fallback
                 # for archived plans that predate placement_profile.
                 overlap_threshold = requirements.footprint_overlap_threshold
-                if overlap_threshold is None:
-                    overlap_threshold = 0.65 if str(spec.get("density", "")).strip().lower() == "dense" else 0.05
+                density = str(spec.get("density", "")).strip().lower()
+                if density == "dense":
+                    # Dense distribution is a semantic request to share the
+                    # available canopy footprint.  Preserve an explicitly
+                    # stricter profile only for non-dense objects; otherwise
+                    # a planner's small default blocks the requested count
+                    # once real prototype dimensions are applied.
+                    overlap_threshold = max(float(overlap_threshold or 0.0), 0.65)
+                elif overlap_threshold is None:
+                    overlap_threshold = 0.05
                 if overlaps(footprint, occupied, threshold=overlap_threshold):
                     continue
                 object_height = max(float(np.ptp(world_vertices[:, 2])), 0.1)
@@ -497,6 +530,23 @@ def scatter_environment(
                 })
                 occupied.add(footprint)
                 placed += 1
+            if placed < int(spec["count"]) and str(spec.get("density", "")).strip():
+                # Density is a qualitative request rather than a hard asset
+                # cardinality contract.  Preserve the scene with the maximum
+                # feasible count while making the shortfall explicit for
+                # downstream validation and audit reports.
+                diagnostics.append({
+                    "asset_id": f"{region['id']}_{spec['category']}",
+                    "category": spec["category"],
+                    "placement": "capacity_limited",
+                    "requested_count": int(spec["count"]),
+                    "placed_count": int(placed),
+                    "capacity_shortfall": int(spec["count"]) - int(placed),
+                    "candidate_count": int(len(candidates)),
+                    "reason": "hard support and footprint constraints exhausted feasible scatter locations",
+                    "place_allowed": True,
+                })
+                continue
             if placed < int(spec["count"]):
                 raise RuntimeError(
                     f"could place only {placed}/{spec['count']} non-overlapping {spec['category']} "

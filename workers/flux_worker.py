@@ -46,7 +46,14 @@ def main():
         pipeline = pipeline_class.from_pretrained(
             _pretrained_path(selected), revision=selected["revision"], torch_dtype=torch.bfloat16
         )
-    pipeline.enable_model_cpu_offload()
+    # Model offload is faster, but its first transformer transfer can briefly
+    # require the whole block on the selected device.  Sequential offload is
+    # useful on shared GPUs where that peak would exceed the available memory.
+    offload_mode = os.getenv("WORLDCLAW_FLUX_OFFLOAD", "model").strip().lower()
+    if offload_mode in {"sequential", "layer", "layers"}:
+        pipeline.enable_sequential_cpu_offload()
+    else:
+        pipeline.enable_model_cpu_offload()
     output_dir = Path(request["work_dir"]) / "flux"
     output_dir.mkdir(parents=True, exist_ok=True)
     images = []

@@ -14,7 +14,7 @@ from pathlib import Path
 import numpy as np
 import requests
 
-from workers.common import load_stage_response, read_request, worker_args, write_response
+from workers.common import load_stage_response, parse_defect_report, read_request, worker_args, write_response
 from workers.export_worker import build_scene, load_mesh
 from workers.placement_worker import contact_metrics, terrain_sampler
 from worldclaw_oss.asset_semantics import effective_asset_type
@@ -97,26 +97,6 @@ def geometry_defects(assets: list[dict], sample_height) -> tuple[list[dict], dic
 
 def image_data_url(path: Path) -> str:
     return "data:image/png;base64," + base64.b64encode(path.read_bytes()).decode()
-
-
-def parse_defect_report(value: dict) -> DefectReport:
-    """Accept partial structured VLM responses while preserving the raw payload."""
-    # Gate the model response at the worker boundary.  Some compatible
-    # gateways echo the diagnostic context (defect_counts, representative
-    # defects, etc.) alongside the requested report; DefectReport is strict
-    # by design, so discard those non-contract fields before validation.
-    normalized = {
-        key: value[key]
-        for key in ("defects", "acceptable", "summary")
-        if key in value
-    }
-    defects = normalized.get("defects") or []
-    normalized.setdefault("acceptable", not bool(defects))
-    normalized.setdefault(
-        "summary",
-        "Derived from the returned defect list; the VLM omitted a summary field.",
-    )
-    return DefectReport.model_validate(normalized)
 
 
 def vlm_report(request: dict, views: list[Path], geometry: list[dict]) -> DefectReport:

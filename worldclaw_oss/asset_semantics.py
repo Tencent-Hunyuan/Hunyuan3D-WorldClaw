@@ -20,11 +20,10 @@ SURFACE_FEATURE_CATEGORIES = frozenset({
 # Structural features are world-building operations, not isolated assets.
 STRUCTURAL_LINEAR_CATEGORIES = frozenset({
     "trail", "trails", "winding_trail", "winding_trails", "road", "roads",
-    "river", "rivers", "river_path", "river_paths", "stream", "streams",
 })
 STRUCTURAL_SURFACE_CATEGORIES = frozenset({
     "lake", "lakes", "water", "water_surface", "shore", "shoreline",
-    "grassland",
+    "grassland", "river", "rivers", "river_path", "river_paths", "stream", "streams",
 })
 
 VEGETATION_CATEGORIES = frozenset({

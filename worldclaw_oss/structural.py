@@ -19,11 +19,11 @@ from .asset_semantics import is_structural_feature, structural_subtype
 LINEAR_REPRESENTATIONS = {
     "trail": "terrain_conforming_swept_strip",
     "road": "terrain_conforming_swept_strip",
-    "river": "terrain_channel_with_water",
-    "stream": "terrain_channel_with_water",
 }
 SURFACE_REPRESENTATIONS = {
     "lake": "regional_surface",
+    "river": "river_corridor_surface",
+    "stream": "river_corridor_surface",
     "shoreline": "shoreline_transition",
     "water": "regional_surface",
     "grassland": "regional_surface",
@@ -173,8 +173,9 @@ parameters that a deterministic worker can execute in world coordinates.
 Preserve every feature_id, region_id, semantic_category, structural_subtype,
 generation_class=structural_feature, and instance_strategy=world_integrated.
 For trails and roads use terrain_conforming_swept_strip. For rivers use
-terrain_channel_with_water. For lakes use regional_surface with water_surface
-true and terrain_operation basin. Geometry values must be finite and physically
+river_corridor_surface with water_surface true and terrain_operation channel.
+For lakes use regional_surface with water_surface true and terrain_operation
+basin. Geometry values must be finite and physically
 reasonable for the supplied world size. Return one JSON object only."""
         user = json.dumps(request, ensure_ascii=False)
         if request_path is not None:
@@ -241,6 +242,14 @@ def structural_features_from_plan(plan: dict[str, Any]) -> list[dict[str, Any]]:
             else:
                 representation = SURFACE_REPRESENTATIONS.get(category, "regional_surface")
                 geometry = {"water_surface": category in {"lake", "water"}, "terrain_operation": "basin" if category in {"lake", "water"} else "flatten"}
+                if category in {"river", "stream"}:
+                    representation = "river_corridor_surface"
+                    geometry.update({
+                        "width_m": 8.0, "thickness_m": 0.0,
+                        "depth_m": 1.5, "bank_width_m": 3.0,
+                        "terrain_following": True, "meander": 0.25,
+                        "water_surface": True, "terrain_operation": "channel",
+                    })
             features.append({
                 "feature_id": f"{region.get('id', 'region')}_{category}_{index:03d}",
                 "region_id": region.get("id", ""),
@@ -425,6 +434,124 @@ def _strip_mesh(centerline: np.ndarray, width: float, heights: np.ndarray, thick
     return np.asarray(vertices, dtype=np.float32), np.asarray(faces, dtype=np.uint32)
 
 
+def _swept_surface_mesh(
+    centerline: np.ndarray, width: float, height: np.ndarray,
+    world_size: tuple[float, float], offset: float = 0.0,
+    surface_heights: np.ndarray | None = None,
+) -> tuple[np.ndarray, np.ndarray]:
+    """Build a terrain-following, open surface for a swept water corridor.
+
+    ``surface_heights`` is shared by both sides of each cross-section.  River
+    beds can cross a steep macro slope, so sampling the two bank vertices
+    independently would twist every strip quad and make the water disappear
+    behind one bank in oblique views.
+    """
+    values = np.asarray(centerline, dtype=float)
+    shared_heights = None if surface_heights is None else np.asarray(surface_heights, dtype=float)
+    if shared_heights is not None and shared_heights.shape != (len(values),):
+        raise ValueError("surface_heights must match centerline length")
+    vertices: list[list[float]] = []
+    for index, point in enumerate(values):
+        tangent = values[min(index + 1, len(values) - 1)] - values[max(index - 1, 0)]
+        tangent /= max(np.linalg.norm(tangent), 1e-8)
+        side = np.asarray([-tangent[1], tangent[0]]) * float(width) / 2.0
+        left, right = point - side, point + side
+        if shared_heights is None:
+            left_z = _sample_height(height, world_size, *left)
+            right_z = _sample_height(height, world_size, *right)
+        else:
+            left_z = right_z = float(shared_heights[index])
+        left_z += float(offset)
+        right_z += float(offset)
+        vertices.extend([[left[0], left[1], left_z], [right[0], right[1], right_z]])
+    faces = []
+    for index in range(len(values) - 1):
+        a, b = index * 2, (index + 1) * 2
+        faces.extend([[a, b, b + 1], [a, b + 1, a + 1]])
+    return _clip_mesh_xy_to_world(np.asarray(vertices, dtype=np.float32), world_size), np.asarray(faces, dtype=np.uint32)
+
+
+def _polyline_nearest_parameter_field(
+    centerline: np.ndarray, world_size: tuple[float, float], shape: tuple[int, int],
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return distance and fractional centerline index for every raster cell."""
+    width, depth = world_size
+    rows, cols = shape
+    xs = np.linspace(-width / 2, width / 2, cols)
+    ys = np.linspace(-depth / 2, depth / 2, rows)
+    xx, yy = np.meshgrid(xs, ys)
+    distance = np.full((rows, cols), np.inf, dtype=np.float64)
+    parameter = np.zeros((rows, cols), dtype=np.float64)
+    values = np.asarray(centerline, dtype=float)
+    for index, (start, end) in enumerate(zip(values[:-1], values[1:])):
+        delta = end - start
+        denominator = max(float(delta @ delta), 1e-12)
+        t = np.clip(((xx - start[0]) * delta[0] + (yy - start[1]) * delta[1]) / denominator, 0.0, 1.0)
+        nearest_x = start[0] + t * delta[0]
+        nearest_y = start[1] + t * delta[1]
+        candidate = np.hypot(xx - nearest_x, yy - nearest_y)
+        update = candidate < distance
+        distance[update] = candidate[update]
+        parameter[update] = index + t[update]
+    return distance, parameter
+
+
+def _river_bed_profile(
+    centerline: np.ndarray, height: np.ndarray, world_size: tuple[float, float],
+    half_width: float, depth: float, samples: int = 9,
+) -> np.ndarray:
+    """Derive a continuous bed profile from the lowest bank cross-section."""
+    values = np.asarray(centerline, dtype=float)
+    profile = np.empty(len(values), dtype=np.float64)
+    for index, point in enumerate(values):
+        previous = values[max(index - 1, 0)]
+        following = values[min(index + 1, len(values) - 1)]
+        tangent = following - previous
+        tangent /= max(float(np.linalg.norm(tangent)), 1e-8)
+        side = np.asarray([-tangent[1], tangent[0]])
+        offsets = np.linspace(-half_width, half_width, max(int(samples), 3))
+        cross_section = [
+            _sample_height(height, world_size, *(point + side * offset))
+            for offset in offsets
+        ]
+        profile[index] = min(cross_section) - float(depth)
+    # A short symmetric filter suppresses one-cell raster noise while retaining
+    # the planner's longitudinal slope and endpoints.
+    if len(profile) >= 5:
+        padded = np.pad(profile, 2, mode="edge")
+        profile = np.convolve(padded, np.ones(5) / 5.0, mode="valid")
+    return profile.astype(np.float32)
+
+
+def _clip_centerline_to_world(
+    centerline: np.ndarray, width: float, world_size: tuple[float, float],
+) -> np.ndarray:
+    """Keep a swept linear feature and its half-width inside world bounds."""
+    values = np.asarray(centerline, dtype=float).copy()
+    half_world = np.asarray(world_size, dtype=float) * 0.5
+    half_width = max(float(width) * 0.5, 0.0)
+    # Keep a small world-relative gap from the slab edge.  Merely reserving
+    # half the sweep width leaves a linear feature touching the boundary;
+    # oblique validation views then read the end cap as detached geometry.
+    edge_margin = max(min(float(world_size[0]), float(world_size[1])) * 0.01, half_width * 0.1)
+    lower = -half_world + half_width + edge_margin
+    upper = half_world - half_width - edge_margin
+    if np.any(lower > upper):
+        raise ValueError("linear feature width exceeds the world extent")
+    values[:, 0] = np.clip(values[:, 0], lower[0], upper[0])
+    values[:, 1] = np.clip(values[:, 1], lower[1], upper[1])
+    return values
+
+
+def _clip_mesh_xy_to_world(vertices: np.ndarray, world_size: tuple[float, float]) -> np.ndarray:
+    """Keep a generated swept mesh inside the Terrain slab in world XY."""
+    values = np.asarray(vertices, dtype=np.float32).copy()
+    half_world = np.asarray(world_size, dtype=np.float32) * 0.5
+    values[:, 0] = np.clip(values[:, 0], -half_world[0], half_world[0])
+    values[:, 1] = np.clip(values[:, 1], -half_world[1], half_world[1])
+    return values
+
+
 def _surface_mesh(points: np.ndarray, z: float) -> tuple[np.ndarray, np.ndarray]:
     """Build a filled regional surface from its authored polygon footprint."""
     polygon = np.asarray(points, dtype=float)
@@ -440,6 +567,48 @@ def _surface_mesh(points: np.ndarray, z: float) -> tuple[np.ndarray, np.ndarray]
         dtype=np.uint32,
     )
     return vertices.astype(np.float32), triangles
+
+
+def _is_axis_aligned_rectangle(points: np.ndarray) -> bool:
+    """Return whether a footprint is the common four-corner layout box."""
+    polygon = np.asarray(points, dtype=float)
+    if polygon.shape != (4, 2):
+        return False
+    unique_x = np.unique(np.round(polygon[:, 0], decimals=8))
+    unique_y = np.unique(np.round(polygon[:, 1], decimals=8))
+    return len(unique_x) == 2 and len(unique_y) == 2
+
+
+def _organic_surface_footprint(points: np.ndarray) -> np.ndarray:
+    """Turn a layout box into a bounded, deterministic natural footprint.
+
+    Layout planners frequently express regions as axis-aligned boxes.  Using
+    that box directly for a water surface also cuts a rectangular hole in the
+    terrain.  Preserve authored non-rectangular polygons, while replacing a
+    box with a smooth radial perturbation that stays inside its bounds.
+    """
+    polygon = np.asarray(points, dtype=float)
+    if not _is_axis_aligned_rectangle(polygon):
+        return polygon
+    center = np.mean(polygon, axis=0)
+    covariance = np.cov((polygon - center).T)
+    eigenvalues, basis = np.linalg.eigh(covariance)
+    order = np.argsort(eigenvalues)[::-1]
+    basis = basis[:, order]
+    if basis[0, 0] < 0:
+        basis[:, 0] *= -1.0
+    if np.linalg.det(basis) < 0:
+        basis[:, 1] *= -1.0
+    local = (polygon - center) @ basis
+    radii = np.maximum(np.max(np.abs(local), axis=0) * 0.90, 1e-6)
+    # The phase is derived from the authored center, making the footprint
+    # reproducible without coupling it to the process-global random state.
+    phase = float((center[0] * 0.173 + center[1] * 0.271) % (2.0 * math.pi))
+    angles = np.linspace(0.0, 2.0 * math.pi, 32, endpoint=False)
+    radial = 1.0 + 0.10 * np.sin(3.0 * angles + phase) + 0.045 * np.cos(5.0 * angles - phase * 0.7)
+    radial /= max(float(np.max(radial)), 1e-6)
+    local_boundary = np.column_stack((radii[0] * radial * np.cos(angles), radii[1] * radial * np.sin(angles)))
+    return local_boundary @ basis.T + center
 
 
 def build_structural_geometry(
@@ -487,8 +656,7 @@ def build_structural_geometry(
                 target_polygon=target_polygon, target_clearance=target_clearance,
             )
             width_m = float(feature["geometry"]["width_m"])
-            heights = np.asarray([_sample_height(modified, world_size, *point) for point in centerline])
-            vertices, triangles = _strip_mesh(centerline, width_m, heights, float(feature["geometry"].get("thickness_m", 0.08)))
+            centerline = _clip_centerline_to_world(centerline, width_m, world_size)
             if category in {"river", "stream"}:
                 depth_m = float(feature["geometry"].get("depth_m", 1.5))
                 for point in centerline:
@@ -497,13 +665,24 @@ def build_structural_geometry(
                     radius_x = max(1, int(width_m / width * height.shape[1] / 2))
                     radius_y = max(1, int(width_m / depth * height.shape[0] / 2))
                     modified[max(0, row - radius_y):row + radius_y + 1, max(0, col - radius_x):col + radius_x + 1] -= depth_m
-                water_heights = heights - depth_m + 0.03
+                # Carve the Terrain first, then sample the carved surface.  The
+                # previous order built the river at pre-carve elevations and
+                # left a visible floating strip above the resulting channel.
+                heights = np.asarray([_sample_height(modified, world_size, *point) for point in centerline])
+                vertices, triangles = _strip_mesh(
+                    centerline, width_m, heights,
+                    float(feature["geometry"].get("thickness_m", 0.08)),
+                )
+                water_heights = heights + 0.03
                 water_vertices, water_triangles = _strip_mesh(centerline, width_m * 0.9, water_heights, 0.01)
                 vertices = np.vstack([vertices, water_vertices])
                 triangles = np.vstack([triangles, water_triangles + len(vertices) - len(water_vertices)])
                 surface_name = "water"
             else:
+                heights = np.asarray([_sample_height(modified, world_size, *point) for point in centerline])
+                vertices, triangles = _strip_mesh(centerline, width_m, heights, float(feature["geometry"].get("thickness_m", 0.08)))
                 surface_name = "road" if category == "road" else "trail"
+            vertices = _clip_mesh_xy_to_world(vertices, world_size)
             for point in centerline:
                 col = int(np.clip(round((point[0] + width / 2) / width * (height.shape[1] - 1)), 0, height.shape[1] - 1))
                 row = int(np.clip(round((point[1] + depth / 2) / depth * (height.shape[0] - 1)), 0, height.shape[0] - 1))
@@ -531,8 +710,84 @@ def build_structural_geometry(
                 )
             centerline_payload = centerline.tolist()
         else:
+            if category in {"river", "stream"}:
+                # Rivers use the regional-surface branch, but their region is
+                # a swept corridor rather than a filled planner rectangle.
+                # One distance field drives both the Terrain carve and the
+                # water mask, keeping their footprints identical.
+                width_m = max(float(feature["geometry"].get("width_m") or 8.0), 1e-3)
+                bank_width_m = max(float(feature["geometry"].get("bank_width_m") or 3.0), 0.0)
+                depth_m = max(float(feature["geometry"].get("depth_m") or 1.5), 0.0)
+                centerline = _linear_centerline(
+                    region, category, world_size, points_count=64,
+                    meander=feature["geometry"].get("meander"),
+                )
+                centerline = _clip_centerline_to_world(
+                    centerline, width_m + 2.0 * bank_width_m, world_size,
+                )
+                base_height = modified.copy()
+                distance, parameter = _polyline_nearest_parameter_field(
+                    centerline, world_size, height.shape,
+                )
+                spacing = min(width / max(height.shape[1] - 1, 1), depth / max(height.shape[0] - 1, 1))
+                hard_radius = width_m * 0.5
+                transition = max(bank_width_m, spacing)
+                bank_u = np.clip((distance - hard_radius) / transition, 0.0, 1.0)
+                smooth = bank_u * bank_u * (3.0 - 2.0 * bank_u)
+                carve_weight = np.where(distance <= hard_radius + transition, 1.0 - smooth, 0.0)
+                modified -= np.asarray(depth_m * carve_weight, dtype=np.float32)
+                # A fixed-depth subtraction preserves a steep cross-slope from
+                # the macro field.  Derive the lowest cross-section bed and
+                # smoothly cap the corridor to it, so both banks and the water
+                # surface share one stable elevation at each path sample.
+                bed_profile = _river_bed_profile(
+                    centerline, base_height, world_size, hard_radius, depth_m,
+                )
+                profile_index = np.clip(parameter, 0.0, len(bed_profile) - 1.0)
+                low_index = np.floor(profile_index).astype(np.int32)
+                high_index = np.minimum(low_index + 1, len(bed_profile) - 1)
+                profile_t = profile_index - low_index
+                bed_target = (
+                    bed_profile[low_index] * (1.0 - profile_t)
+                    + bed_profile[high_index] * profile_t
+                )
+                flattened = np.minimum(modified, bed_target.astype(np.float32))
+                modified = (
+                    modified * (1.0 - carve_weight)
+                    + flattened * carve_weight
+                ).astype(np.float32)
+                mask = distance <= hard_radius
+                occupied_mask = distance <= hard_radius + transition
+                water_heights = np.asarray([
+                    _sample_height(modified, world_size, *point)
+                    for point in centerline
+                ], dtype=np.float32)
+                vertices, triangles = _swept_surface_mesh(
+                    centerline, width_m * 0.9, modified, world_size, offset=0.03,
+                    surface_heights=water_heights,
+                )
+                surface_polygon = None
+                surface_level = float(np.median(modified[mask])) if np.any(mask) else float(np.median(modified))
+                centerline_payload = centerline.tolist()
+                occupied |= occupied_mask
+                exclusion |= occupied_mask
+                surface[mask] = 2
+                water_surface[mask] = True
+                # Skip the polygon/basin code below; its variables are not
+                # meaningful for a centerline-derived corridor.
+                mesh_path = output_dir / f"{feature['feature_id']}.npz"
+                np.savez_compressed(mesh_path, vertices=vertices, triangles=triangles)
+                mesh_record = {"feature_id": feature["feature_id"], "category": category, "region_id": feature["region_id"], "representation": feature["representation"], "mesh": str(mesh_path), "transform_z_up": np.eye(4).tolist(), "centerline": centerline_payload, "water_level": surface_level}
+                meshes.append(mesh_record)
+                continue
+
             polygon = _centered_polygon(region, world_size)
-            mask = _polygon_mask(polygon, world_size, height.shape)
+            surface_polygon = (
+                _organic_surface_footprint(polygon)
+                if feature["geometry"].get("water_surface")
+                else polygon
+            )
+            mask = _polygon_mask(surface_polygon, world_size, height.shape)
             if layout_weights is not None and feature["geometry"].get("water_surface"):
                 region_index = region_indices.get(str(feature["region_id"]))
                 if region_index is not None:
@@ -581,7 +836,7 @@ def build_structural_geometry(
             if feature["geometry"].get("water_surface"):
                 water_surface[mask] = True
             z = float(surface_level if feature["geometry"].get("terrain_operation") == "basin" else (np.mean(modified[mask]) if np.any(mask) else level))
-            vertices, triangles = _surface_mesh(polygon, z)
+            vertices, triangles = _surface_mesh(surface_polygon, z)
             centerline_payload = []
             if feature["geometry"].get("terrain_operation") == "basin":
                 lake_integrations.append({

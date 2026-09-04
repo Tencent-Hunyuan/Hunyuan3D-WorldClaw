@@ -22,3 +22,5 @@ testpaths = ["tests"]
 [tool.setuptools.packages.find]
 include = ["worldclaw_oss*"]
 
+[tool.setuptools.package-data]
+worldclaw_oss = ["*.json"]

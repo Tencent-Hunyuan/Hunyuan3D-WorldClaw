@@ -111,6 +111,28 @@ class OpenAIJSONClient:
             schema=schema,
         )
 
+    def chat_json(self, model, system: str, user: str, schema: dict[str, Any], seed: int):
+        """Use Chat Completions JSON mode for large replan contexts.
+
+        Some compatible gateways stall on Responses strict schemas containing
+        a large planning context. The returned JSON is still validated by the
+        caller against the same Pydantic TerrainMacroPlan contract.
+        """
+        del seed
+        return self.client._chat_json_response(
+            model=model.model_id, system=system, user=user, schema=schema,
+        )
+
+    def vision_json(self, *, system: str, user: str, image_paths, schema: dict[str, Any], model: str | None = None):
+        """Expose the image-capable client through the planner adapter contract."""
+        return self.client.vision_json(
+            system=system,
+            user=user,
+            image_paths=image_paths,
+            schema=schema,
+            model=model,
+        )
+
 
 class IntentPayload(BaseModel):
     constraints: list[str]
@@ -210,6 +232,33 @@ def scene_plan_api_schema() -> dict[str, Any]:
         },
         "required": ["theme", "world_size_m", "regions", "terrain", "materials", "explicit_constraints"],
     }
+
+
+def terrain_macro_api_schema() -> dict[str, Any]:
+    """Strict gateway schema for the GPT terrain composition contract."""
+    vec = {"type": "object", "additionalProperties": False,
+           "properties": {"x": {"type": "number"}, "y": {"type": "number"}},
+           "required": ["x", "y"]}
+    primitive = {
+        "type": "object", "additionalProperties": False,
+        "properties": {
+            "id": {"type": "string"},
+            "type": {"type": "string", "enum": ["hill", "ridge", "valley", "basin", "plateau", "bench", "saddle", "cliff", "terrace", "channel", "depression", "coastal_slope"]},
+            "center": vec,
+            "control_points": {"type": "array", "items": vec},
+            "polygon": {"type": "object", "additionalProperties": False, "properties": {"points": {"type": "array", "items": vec}}, "required": ["points"]},
+            "radius_m": {"type": ["number", "array"], "items": {"type": "number"}},
+            "width_m": {"type": "number"}, "height_m": {"type": "number"}, "depth_m": {"type": "number"},
+            "target_elevation_m": {"type": "number"}, "falloff_m": {"type": "number"}, "max_slope_deg": {"type": "number"},
+            "priority": {"type": "integer"}, "functional_role": {"type": "string"}, "relationships": {"type": "array", "items": {"type": "string"}},
+        }, "required": ["id", "type", "height_m", "depth_m", "falloff_m", "priority", "control_points", "relationships"],
+    }
+    zone = {
+        "type": "object", "additionalProperties": False,
+        "properties": {"id": {"type": "string"}, "role": {"type": "string", "enum": ["cabin_site", "trail_pass", "viewpoint", "shore_access", "structure_clearing", "walkable_corridor"]}, "center": vec, "polygon": {"type": "object", "additionalProperties": False, "properties": {"points": {"type": "array", "items": vec}}, "required": ["points"]}, "radius_m": {"type": "number"}, "target_landform": {"type": "string"}, "target_slope_deg": {"type": "object", "additionalProperties": {"type": "number"}}},
+        "required": ["id", "role", "radius_m", "target_slope_deg"],
+    }
+    return {"type": "object", "additionalProperties": False, "properties": {"schema_version": {"type": "string"}, "world_size_m": {"type": "array", "minItems": 2, "maxItems": 2, "items": {"type": "number"}}, "global_style": {"type": "object", "additionalProperties": {"type": "string"}}, "landforms": {"type": "array", "minItems": 1, "items": primitive}, "functional_zones": {"type": "array", "items": zone}, "composition_constraints": {"type": "array", "items": {"type": "string"}}, "elevation_relationships": {"type": "array", "items": {"type": "string"}}}, "required": ["schema_version", "world_size_m", "global_style", "landforms", "functional_zones", "composition_constraints", "elevation_relationships"]}
 
 
 def asset_type_api_schema() -> dict[str, Any]:

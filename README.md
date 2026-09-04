@@ -35,10 +35,13 @@ revisions. The live CLI fails before inference until the lock is resolved.
 ## CLI
 
     python -m worldclaw_oss generate \
-      --prompt-file prompts/castle.txt \
+      --prompt-file prompts/forest_lake.txt \
       --seed 42 \
-      --output runs/castle \
+      --output runs/forest_lake \
       --mode live
+
+Live runs default to `prompts/forest_lake.txt` when `--prompt-file` is omitted.
+That canonical prompt is: `A forest region with lakes, rivers, cabins and trails`.
 
     python -m worldclaw_oss resume --run-id castle --runs-root runs
     python -m worldclaw_oss validate --run runs/castle --full

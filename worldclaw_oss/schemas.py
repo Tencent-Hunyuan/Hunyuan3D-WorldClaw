@@ -77,6 +77,25 @@ class ObjectSpec(StrictModel):
         return self.asset_role
 
 
+class RegionTopology(StrictModel):
+    """Declarative hard spatial relations consumed by Layout sampling."""
+
+    inside: list[str] = Field(default_factory=list)
+    contains: list[str] = Field(default_factory=list)
+    adjacent_to: list[str] = Field(default_factory=list)
+    surrounds: list[str] = Field(default_factory=list)
+    connected: bool = True
+
+
+class GeometryHint(StrictModel):
+    """Variable geometry guidance; it is not a final raster boundary."""
+
+    extent_m: tuple[float, float] | None = None
+    shape_hint: str = ""
+    irregularity: float = Field(default=0.0, ge=0.0, le=1.0)
+    preferred_aspect_ratio: float | None = Field(default=None, gt=0.0)
+
+
 class RegionPlan(StrictModel):
     id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
     function: str
@@ -86,6 +105,8 @@ class RegionPlan(StrictModel):
     neighbors: list[str] = Field(default_factory=list)
     objects: list[ObjectSpec] = Field(default_factory=list)
     spatial_relations: list[str] = Field(default_factory=list)
+    topology: RegionTopology = Field(default_factory=RegionTopology)
+    geometry_hint: GeometryHint = Field(default_factory=GeometryHint)
     appearance: str = ""
     camera_hint: str = "wide"
 
@@ -103,6 +124,73 @@ class TerrainSpec(StrictModel):
     noise_octaves: list[float] = Field(default_factory=lambda: [1.0, 0.5, 0.25], min_length=1, max_length=8)
     operators: list[TerrainOperator] = Field(default_factory=list)
     boundary_blend: float = Field(default=0.12, gt=0.0, le=0.5)
+
+
+class TerrainLandform(StrictModel):
+    """Planner-owned, executable low-frequency terrain primitive."""
+    id: str = Field(pattern=r"^[a-z0-9][a-z0-9_-]*$")
+    type: Literal[
+        "hill", "ridge", "valley", "basin", "plateau", "bench", "saddle",
+        "cliff", "terrace", "channel", "depression", "coastal_slope",
+    ]
+    center: Vec2 | None = None
+    control_points: list[Vec2] = Field(default_factory=list)
+    polygon: Polygon | None = None
+    radius_m: tuple[float, float] | float | None = None
+    width_m: float | None = Field(default=None, gt=0.0)
+    height_m: float = 0.0
+    depth_m: float = 0.0
+    target_elevation_m: float | None = None
+    falloff_m: float = Field(default=8.0, gt=0.0)
+    max_slope_deg: float | None = Field(default=None, ge=0.0, le=90.0)
+    priority: int = Field(default=0, ge=-100, le=100)
+    functional_role: str | None = None
+    relationships: list[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def executable_geometry(self) -> "TerrainLandform":
+        if self.center is None and not self.control_points and self.polygon is None:
+            raise ValueError("landform requires center, control_points, or polygon")
+        if self.type in {"ridge", "valley", "channel"} and len(self.control_points) < 2:
+            raise ValueError(f"{self.type} requires at least two control_points")
+        if self.type in {"hill", "basin", "bench", "saddle", "depression", "coastal_slope"} and self.radius_m is None and self.polygon is None:
+            raise ValueError(f"{self.type} requires radius_m or polygon")
+        if self.type == "basin" and self.depth_m <= 0 and self.target_elevation_m is None:
+            raise ValueError("basin requires positive depth_m or target_elevation_m")
+        if isinstance(self.radius_m, tuple) and any(value <= 0 for value in self.radius_m):
+            raise ValueError("radius_m values must be positive")
+        if isinstance(self.radius_m, (int, float)) and self.radius_m <= 0:
+            raise ValueError("radius_m must be positive")
+        return self
+
+
+class TerrainFunctionalZone(StrictModel):
+    id: str
+    role: Literal["cabin_site", "trail_pass", "viewpoint", "shore_access", "structure_clearing", "walkable_corridor"]
+    center: Vec2 | None = None
+    polygon: Polygon | None = None
+    radius_m: float = Field(gt=0.0)
+    target_landform: str | None = None
+    target_slope_deg: dict[str, float] = Field(default_factory=dict)
+
+
+class TerrainMacroPlan(StrictModel):
+    """Complete GPT composition contract; no pixel data is allowed here."""
+    schema_version: str = "worldclaw-oss-terrain-macro-v1"
+    world_size_m: tuple[float, float]
+    global_style: dict[str, Any] = Field(default_factory=dict)
+    landforms: list[TerrainLandform] = Field(min_length=1)
+    functional_zones: list[TerrainFunctionalZone] = Field(default_factory=list)
+    composition_constraints: list[str] = Field(default_factory=list)
+    elevation_relationships: list[str] = Field(default_factory=list)
+    source_scene_plan_hash: str | None = None
+
+    @field_validator("world_size_m")
+    @classmethod
+    def positive_macro_size(cls, value):
+        if len(value) != 2 or min(value) <= 0:
+            raise ValueError("world_size_m must be positive")
+        return value
 
 
 class ScenePlan(StrictModel):
@@ -128,7 +216,14 @@ class ScenePlan(StrictModel):
         known = set(ids)
         for region in self.regions:
             unknown = set(region.neighbors) - known
-            if unknown or region.id in region.neighbors:
+            topology_ids = (
+                set(region.topology.inside)
+                | set(region.topology.contains)
+                | set(region.topology.adjacent_to)
+                | set(region.topology.surrounds)
+            )
+            unknown |= topology_ids - known
+            if unknown or region.id in region.neighbors or region.id in topology_ids:
                 raise ValueError(f"invalid neighbors for {region.id}: {sorted(unknown)}")
         if {t.region_id for t in self.terrain} != known:
             raise ValueError("terrain specs must cover every region exactly")
@@ -249,7 +344,10 @@ class Stage(str, Enum):
     INTENT = "intent"
     PLAN = "plan"
     LAYOUT = "layout"
+    TERRAIN_MACRO_PLAN = "terrain_macro_plan"
+    TERRAIN_MACRO_GENERATE = "terrain_macro_generate"
     TERRAIN = "terrain"
+    TERRAIN_VISUAL_VALIDATE = "terrain_visual_validate"
     STRUCTURAL_INPUT = "structural_input"
     STRUCTURAL_REPLAN = "structural_replan"
     STRUCTURAL_GENERATE = "structural_generate"
